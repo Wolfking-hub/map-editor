@@ -440,8 +440,9 @@
     <div class="export-menu-wrap">
       <button class="primary" onclick="toggleExportMenu(event)">导出 PNG ▾</button>
       <div class="export-menu" id="exportMenu">
-        <button onclick="exportPNG(true)">带网格线</button>
-        <button onclick="exportPNG(false)">不带网格线</button>
+        <button onclick="exportPNG('grid')">带网格线</button>
+        <button onclick="exportPNG('noline')">不带网格线</button>
+        <button onclick="exportPNG('baseOnly')">只有底板</button>
       </div>
     </div>
   </div>
@@ -936,18 +937,27 @@ function importJSON(e) {
   e.target.value = '';
 }
 
-async function exportPNG(withGridLines) {
+/* ===== 导出 PNG：三档 ===== */
+async function exportPNG(mode) {
+  // mode: 'grid' | 'noline' | 'baseOnly'
   document.getElementById('exportMenu').classList.remove('show');
+
+  const withGridLines = (mode === 'grid');
+  const baseOnly = (mode === 'baseOnly');
+  const showGridStructure = (mode === 'grid'); // grid 模式有 gap，其他模式无 gap
+
   const step = CELL_SIZE + GAP;
   const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
   const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
 
   const usedIcons = new Set();
-  for (let r = 0; r < rows; r++)
-    for (let c = 0; c < cols; c++) {
-      const g = gridData[r][c].ground;
-      if (g && g !== 'empty') usedIcons.add(g);
-    }
+  if (!baseOnly) {
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++) {
+        const g = gridData[r][c].ground;
+        if (g && g !== 'empty') usedIcons.add(g);
+      }
+  }
 
   const imgMap = {};
   await Promise.all([...usedIcons].map(id => new Promise(resolve => {
@@ -959,7 +969,7 @@ async function exportPNG(withGridLines) {
     img.src = ICONS_DIR + file + ICON_EXT;
   })));
 
-  // ===== 高清屏适配（解决网格线太粗） =====
+  // 高清屏适配
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
   canvas.width = totalW * dpr;
@@ -974,9 +984,11 @@ async function exportPNG(withGridLines) {
     'arrow-green': '#43a047', 'arrow-yellow': '#fbc02d'
   };
 
+  // 背景
   ctx.fillStyle = withGridLines ? '#dddddd' : '#ffffff';
   ctx.fillRect(0, 0, totalW, totalH);
 
+  // 底板
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const x = c * step, y = r * step;
@@ -989,7 +1001,7 @@ async function exportPNG(withGridLines) {
         ctx.fillStyle = '#ffffff';
       }
 
-      if (withGridLines) {
+      if (showGridStructure) {
         ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
       } else {
         const wx = c * CELL_SIZE;
@@ -999,7 +1011,7 @@ async function exportPNG(withGridLines) {
     }
   }
 
-  // 网格线：更细更浅
+  // 网格线
   if (withGridLines) {
     ctx.strokeStyle = '#e8e8e8';
     ctx.lineWidth = 1;
@@ -1011,79 +1023,87 @@ async function exportPNG(withGridLines) {
     }
   }
 
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const data = gridData[r][c];
-      let x, y;
-      if (withGridLines) {
-        x = c * step; y = r * step;
-      } else {
-        x = c * CELL_SIZE; y = r * CELL_SIZE;
-      }
-      if (data.ground && data.ground !== 'empty') {
-        const img = imgMap[data.ground];
-        if (img) ctx.drawImage(img, x, y, CELL_SIZE, CELL_SIZE);
+  // 图标（baseOnly 模式不画）
+  if (!baseOnly) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const data = gridData[r][c];
+        let x, y;
+        if (showGridStructure) {
+          x = c * step; y = r * step;
+        } else {
+          x = c * CELL_SIZE; y = r * CELL_SIZE;
+        }
+        if (data.ground && data.ground !== 'empty') {
+          const img = imgMap[data.ground];
+          if (img) ctx.drawImage(img, x, y, CELL_SIZE, CELL_SIZE);
+        }
       }
     }
   }
 
-  const { lineWidth, headLen, headWidth } = ARROW_STYLE;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const data = gridData[r][c];
-      if (!data.arrows || data.arrows.length === 0) continue;
+  // 箭头（baseOnly 模式不画）
+  if (!baseOnly) {
+    const { lineWidth, headLen, headWidth } = ARROW_STYLE;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const data = gridData[r][c];
+        if (!data.arrows || data.arrows.length === 0) continue;
 
-      let cx, cy;
-      if (withGridLines) {
-        cx = c * step + CELL_SIZE/2;
-        cy = r * step + CELL_SIZE/2;
-      } else {
-        cx = c * CELL_SIZE + CELL_SIZE/2;
-        cy = r * CELL_SIZE + CELL_SIZE/2;
-      }
-
-      data.arrows.forEach(arrow => {
-        if (arrow.toR === undefined || arrow.toC === undefined) return;
-        let tx, ty;
-        if (withGridLines) {
-          tx = arrow.toC * step + CELL_SIZE/2;
-          ty = arrow.toR * step + CELL_SIZE/2;
+        let cx, cy;
+        if (showGridStructure) {
+          cx = c * step + CELL_SIZE/2;
+          cy = r * step + CELL_SIZE/2;
         } else {
-          tx = arrow.toC * CELL_SIZE + CELL_SIZE/2;
-          ty = arrow.toR * CELL_SIZE + CELL_SIZE/2;
+          cx = c * CELL_SIZE + CELL_SIZE/2;
+          cy = r * CELL_SIZE + CELL_SIZE/2;
         }
-        const dx = tx - cx, dy = ty - cy;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 1) return;
-        const ux = dx / dist, uy = dy / dist;
-        const lineEndX = tx - ux * (headLen * 0.5);
-        const lineEndY = ty - uy * (headLen * 0.5);
-        ctx.strokeStyle = colorMap[arrow.color];
-        ctx.lineWidth = lineWidth;
-        ctx.lineCap = 'round';
-        ctx.globalAlpha = 0.85;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(lineEndX, lineEndY);
-        ctx.stroke();
-        const baseX = tx - ux * headLen;
-        const baseY = ty - uy * headLen;
-        const px = -uy, py = ux;
-        ctx.fillStyle = colorMap[arrow.color];
-        ctx.beginPath();
-        ctx.moveTo(tx, ty);
-        ctx.lineTo(baseX + px * (headWidth / 2), baseY + py * (headWidth / 2));
-        ctx.lineTo(baseX - px * (headWidth / 2), baseY - py * (headWidth / 2));
-        ctx.closePath();
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      });
+
+        data.arrows.forEach(arrow => {
+          if (arrow.toR === undefined || arrow.toC === undefined) return;
+          let tx, ty;
+          if (showGridStructure) {
+            tx = arrow.toC * step + CELL_SIZE/2;
+            ty = arrow.toR * step + CELL_SIZE/2;
+          } else {
+            tx = arrow.toC * CELL_SIZE + CELL_SIZE/2;
+            ty = arrow.toR * CELL_SIZE + CELL_SIZE/2;
+          }
+          const dx = tx - cx, dy = ty - cy;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 1) return;
+          const ux = dx / dist, uy = dy / dist;
+          const lineEndX = tx - ux * (headLen * 0.5);
+          const lineEndY = ty - uy * (headLen * 0.5);
+          ctx.strokeStyle = colorMap[arrow.color];
+          ctx.lineWidth = lineWidth;
+          ctx.lineCap = 'round';
+          ctx.globalAlpha = 0.85;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(lineEndX, lineEndY);
+          ctx.stroke();
+          const baseX = tx - ux * headLen;
+          const baseY = ty - uy * headLen;
+          const px = -uy, py = ux;
+          ctx.fillStyle = colorMap[arrow.color];
+          ctx.beginPath();
+          ctx.moveTo(tx, ty);
+          ctx.lineTo(baseX + px * (headWidth / 2), baseY + py * (headWidth / 2));
+          ctx.lineTo(baseX - px * (headWidth / 2), baseY - py * (headWidth / 2));
+          ctx.closePath();
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        });
+      }
     }
   }
 
   const a = document.createElement('a');
   a.href = canvas.toDataURL('image/png');
-  a.download = withGridLines ? 'map-grid.png' : 'map-nogrid.png';
+  a.download = mode === 'grid' ? 'map-grid.png'
+             : mode === 'noline' ? 'map-nogrid.png'
+             : 'map-baseonly.png';
   a.click();
 }
 

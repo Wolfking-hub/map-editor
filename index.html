@@ -561,13 +561,13 @@
   <div class="row">
     <label>长（列）</label>
     <div class="wheel-wrap">
-      <input type="number" id="colsInput" value="12" min="10" max="30">
+      <input type="number" id="colsInput" value="12" min="1" max="35">
       <div class="tick-bar" id="colsTick"><div class="ticks"></div><div class="indicator"></div></div>
       <span class="max-hint" id="colsHint">到顶了喵！</span>
     </div>
     <label>宽（行）</label>
     <div class="wheel-wrap">
-      <input type="number" id="rowsInput" value="12" min="10" max="30">
+      <input type="number" id="rowsInput" value="12" min="1" max="35">
       <div class="tick-bar" id="rowsTick"><div class="ticks"></div><div class="indicator"></div></div>
       <span class="max-hint" id="rowsHint">到顶了喵！</span>
     </div>
@@ -975,8 +975,8 @@ document.addEventListener('keydown', (e) => {
 function resizeGrid() {
   const newCols = +document.getElementById('colsInput').value;
   const newRows = +document.getElementById('rowsInput').value;
-  if (newCols < 10 || newCols > 30 || newRows < 10 || newRows > 30) {
-    alert('长和宽的范围都是 10–30'); return;
+  if (newCols < 1 || newCols > 35 || newRows < 1 || newRows > 35) {
+    alert('长和宽的范围都是 1–35'); return;
   }
 
   for (let r = 0; r < rows; r++) {
@@ -1090,17 +1090,14 @@ function importJSON(e) {
   e.target.value = '';
 }
 
-/* ===== 导出 PNG：两档 ===== */
 async function exportPNG(mode) {
-  // mode: 'grid' | 'noline'
   document.getElementById('exportMenu').classList.remove('show');
 
-  const withGap = (mode === 'grid');   // grid 模式用 gap 露灰底当格线
+  const withGap = (mode === 'grid');
   const step = CELL_SIZE + GAP;
   const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
   const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
 
-  // 收集要加载的图标
   const usedIcons = new Set();
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++) {
@@ -1118,7 +1115,6 @@ async function exportPNG(mode) {
     img.src = ICONS_DIR + file + ICON_EXT;
   })));
 
-  // DPR 高清适配
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
   canvas.width = totalW * dpr;
@@ -1133,11 +1129,9 @@ async function exportPNG(mode) {
     'arrow-green': '#43a047', 'arrow-yellow': '#fbc02d'
   };
 
-  // 背景
   ctx.fillStyle = withGap ? '#dddddd' : '#ffffff';
   ctx.fillRect(0, 0, totalW, totalH);
 
-  // 每格：底板 + 白底
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const data = gridData[r][c];
@@ -1159,7 +1153,6 @@ async function exportPNG(mode) {
     }
   }
 
-  // 图标
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const data = gridData[r][c];
@@ -1172,7 +1165,6 @@ async function exportPNG(mode) {
     }
   }
 
-  // 箭头
   const { lineWidth, headLen, headWidth } = ARROW_STYLE;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -1301,7 +1293,6 @@ document.querySelectorAll('.arrow-tool').forEach(el => {
   };
 });
 
-/* ===== 底板：滑条 + 数字输入框 双向同步 ===== */
 const baseLevel = document.getElementById('baseLevel');
 const baseLevelNum = document.getElementById('baseLevelNum');
 const basePreview = document.getElementById('basePreview');
@@ -1350,14 +1341,13 @@ baseLevelNum.addEventListener('wheel', (e) => {
 
 updateBasePreview();
 
-/* ===== 刻度条 ===== */
 function initTickBar(tickId, inputId, maxVal, hintId, minVal) {
   const tickBar = document.getElementById(tickId);
   const input = document.getElementById(inputId);
   const hint = document.getElementById(hintId);
   const ticksEl = tickBar.querySelector('.ticks');
 
-  const MIN_VAL = minVal !== undefined ? minVal : 10;
+  const MIN_VAL = minVal !== undefined ? minVal : 1;
   const TOTAL_TICKS = Math.max((maxVal - MIN_VAL) * 2 + 10, 50);
 
   ticksEl.innerHTML = '';
@@ -1443,8 +1433,8 @@ function initTickBar(tickId, inputId, maxVal, hintId, minVal) {
   updateTicks();
 }
 
-initTickBar('colsTick', 'colsInput', 30, 'colsHint', 10);
-initTickBar('rowsTick', 'rowsInput', 30, 'rowsHint', 10);
+initTickBar('colsTick', 'colsInput', 35, 'colsHint', 1);
+initTickBar('rowsTick', 'rowsInput', 35, 'rowsHint', 1);
 
 initGrid(12, 12);
 renderIconGroups();

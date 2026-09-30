@@ -18,6 +18,7 @@
     min-height: 100vh;
   }
   h1 { font-size: 20px; margin: 0 0 12px 0; }
+
   .panel {
     background: #fff;
     border-radius: 12px;
@@ -27,6 +28,7 @@
     max-width: 1200px;
   }
   .panel h2 { font-size: 14px; margin: 0 0 8px 0; color: #555; }
+
   .top-bar {
     display: flex;
     gap: 12px;
@@ -44,6 +46,7 @@
   }
   .top-bar label { font-size: 13px; }
   .top-bar .spacer { flex: 1; }
+
   button {
     padding: 8px 12px;
     font-size: 13px;
@@ -55,14 +58,25 @@
   button:hover { background: #f0f0f0; }
   button.primary { background: #1a73e8; color: #fff; border-color: #1a73e8; }
   button.primary:hover { background: #1557b0; }
+
   button.danger {
     color: #e53935;
     border-color: #e53935;
     background: #fff;
     min-width: 90px;
   }
-  button.danger:hover { background: #ffe5e5; border-color: #c62828; color: #c62828; }
-  .wheel-wrap { display: flex; align-items: stretch; gap: 4px; position: relative; }
+  button.danger:hover {
+    background: #ffe5e5;
+    border-color: #c62828;
+    color: #c62828;
+  }
+
+  .wheel-wrap {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    position: relative;
+  }
   .wheel-wrap input[type="number"] {
     width: 100px;
     padding: 6px 46px 6px 8px;
@@ -72,9 +86,18 @@
     -moz-appearance: textfield;
   }
   .wheel-wrap input[type="number"]::-webkit-outer-spin-button,
-  .wheel-wrap input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .wheel-wrap input.at-max { border-color: #e53935; background: #fff5f5; color: #e53935; }
-  .wheel-wrap input.shake { animation: shake 0.25s ease; }
+  .wheel-wrap input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .wheel-wrap input.at-max {
+    border-color: #e53935;
+    background: #fff5f5;
+    color: #e53935;
+  }
+  .wheel-wrap input.shake {
+    animation: shake 0.25s ease;
+  }
   @keyframes shake {
     0% { transform: translateX(0); }
     20% { transform: translateX(-3px); }
@@ -101,7 +124,12 @@
     top: 0;
     transition: transform 0.08s linear;
   }
-  .tick-bar .tick { height: 8px; display: flex; align-items: center; justify-content: center; }
+  .tick-bar .tick {
+    height: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   .tick-bar .tick::before {
     content: '';
     display: block;
@@ -130,6 +158,7 @@
     pointer-events: none;
   }
   .max-hint.show { display: inline; }
+
   .map-panel {
     display: flex;
     justify-content: center;
@@ -169,6 +198,7 @@
   }
   .cell:hover { background: #f0f7ff; }
   .cell:active { transform: scale(0.96); }
+
   .cell .base-block {
     position: absolute;
     inset: 0;
@@ -185,6 +215,7 @@
     z-index: 1;
   }
   .cell.arrow-start { outline: 2px solid #1a73e8; outline-offset: -2px; }
+
   .arrow-svg {
     position: absolute;
     top: 0;
@@ -192,6 +223,7 @@
     pointer-events: none;
     z-index: 2;
   }
+
   .bottom-panel {
     width: 100%;
     max-width: 1200px;
@@ -200,6 +232,7 @@
     align-items: flex-start;
     flex-wrap: wrap;
   }
+
   .layer-col {
     display: flex;
     flex-direction: column;
@@ -207,7 +240,12 @@
     min-width: 200px;
   }
   .layer-col h2 { font-size: 13px; margin: 0 0 2px 0; color: #555; }
-  .layer-switch { display: flex; flex-direction: column; gap: 6px; }
+
+  .layer-switch {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
   .layer-btn {
     padding: 8px 12px;
     font-size: 13px;
@@ -220,7 +258,11 @@
     box-sizing: border-box;
   }
   .layer-btn.active { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
-  .mode-switch { display: flex; gap: 6px; }
+
+  .mode-switch {
+    display: flex;
+    gap: 6px;
+  }
   .mode-btn {
     flex: 1;
     padding: 6px 10px;
@@ -232,7 +274,12 @@
     text-align: center;
   }
   .mode-btn.active { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
-  .mode-switch.disabled { opacity: 0.4; pointer-events: none; }
+
+  .mode-switch.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
   .base-setting {
     display: flex;
     flex-direction: column;
@@ -267,11 +314,29 @@
     -moz-appearance: textfield;
   }
   .base-setting .base-num::-webkit-outer-spin-button,
-  .base-setting .base-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .base-setting .base-num.at-max { border-color: #e53935; background: #fff5f5; color: #e53935; }
-  .base-setting .base-num.shake { animation: shake 0.25s ease; }
-  .base-setting .slider-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; }
-  .base-setting input[type="range"] { flex: 1; accent-color: #1a73e8; }
+  .base-setting .base-num::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .base-setting .base-num.at-max {
+    border-color: #e53935;
+    background: #fff5f5;
+    color: #e53935;
+  }
+  .base-setting .base-num.shake {
+    animation: shake 0.25s ease;
+  }
+  .base-setting .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #555;
+  }
+  .base-setting input[type="range"] {
+    flex: 1;
+    accent-color: #1a73e8;
+  }
   .base-setting .preview {
     width: 22px;
     height: 22px;
@@ -279,11 +344,21 @@
     border: 1px solid #ccc;
     flex-shrink: 0;
   }
-  .base-setting.disabled { opacity: 0.4; pointer-events: none; }
+  .base-setting.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
   .icon-col { flex: 1; min-width: 400px; }
   .icon-col h2 { font-size: 13px; margin: 0 0 6px 0; color: #555; }
+
   .icon-groups { display: flex; flex-direction: column; gap: 12px; }
-  .icon-group h3 { font-size: 13px; color: #888; margin: 0 0 6px 0; font-weight: 600; }
+  .icon-group h3 {
+    font-size: 13px;
+    color: #888;
+    margin: 0 0 6px 0;
+    font-weight: 600;
+  }
   .icon-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
@@ -302,7 +377,12 @@
   }
   .icon-item:hover { background: #f0f0f0; }
   .icon-item.active { border-color: #1a73e8; background: #e8f0fe; }
-  .icon-item img { width: 48px; height: 48px; object-fit: contain; pointer-events: none; }
+  .icon-item img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    pointer-events: none;
+  }
   .icon-item .name {
     font-size: 11px;
     color: #555;
@@ -311,6 +391,7 @@
     line-height: 1.2;
     word-break: break-all;
   }
+
   .arrow-tools { display: flex; flex-wrap: wrap; gap: 6px; }
   .arrow-tool {
     padding: 6px 10px;
@@ -326,11 +407,30 @@
   .arrow-tool.arrow-blue { border-left: 4px solid #1e88e5; }
   .arrow-tool.arrow-green { border-left: 4px solid #43a047; }
   .arrow-tool.arrow-yellow { border-left: 4px solid #fbc02d; }
-  .arrow-tool.eraser-tool { color: #e53935; border-color: #e53935; background: #fff; }
+
+  .arrow-tool.eraser-tool {
+    color: #e53935;
+    border-color: #e53935;
+    background: #fff;
+  }
   .arrow-tool.eraser-tool:hover { background: #ffe5e5; }
-  .arrow-tool.eraser-tool.active { background: #e53935; color: #fff; border-color: #e53935; }
-  .hint { font-size: 11px; color: #999; margin: 8px 0 0 0; line-height: 1.5; }
-  .export-menu-wrap { position: relative; display: inline-block; }
+  .arrow-tool.eraser-tool.active {
+    background: #e53935;
+    color: #fff;
+    border-color: #e53935;
+  }
+
+  .hint {
+    font-size: 11px;
+    color: #999;
+    margin: 8px 0 0 0;
+    line-height: 1.5;
+  }
+
+  .export-menu-wrap {
+    position: relative;
+    display: inline-block;
+  }
   .export-menu {
     position: absolute;
     top: 100%;
@@ -343,14 +443,19 @@
     padding: 6px;
     display: none;
     z-index: 100;
-    min-width: 180px;
+    min-width: 200px;
     transform-origin: top right;
     transform: scale(0.95);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.18s ease, transform 0.18s ease;
   }
-  .export-menu.show { display: block; opacity: 1; transform: scale(1); pointer-events: auto; }
+  .export-menu.show {
+    display: block;
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
   .export-menu button {
     display: block;
     width: 100%;
@@ -363,6 +468,7 @@
     cursor: pointer;
   }
   .export-menu button:hover { background: #f0f0f0; }
+
   @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -371,13 +477,28 @@
     from { opacity: 0; }
     to   { opacity: 1; }
   }
+
   .icon-col { animation: fadeInUp 0.25s ease both; }
   .icon-group { animation: fadeInUp 0.28s ease both; }
+  .icon-group:nth-child(1) { animation-delay: 0.02s; }
+  .icon-group:nth-child(2) { animation-delay: 0.06s; }
+  .icon-group:nth-child(3) { animation-delay: 0.10s; }
+  .icon-group:nth-child(4) { animation-delay: 0.14s; }
   .icon-item { animation: fadeIn 0.25s ease both; }
-  .layer-btn, .mode-btn, .arrow-tool, .icon-item, button {
+
+  .layer-btn,
+  .mode-btn,
+  .arrow-tool,
+  .icon-item,
+  button {
     transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, opacity 0.18s ease, transform 0.1s ease;
   }
   button:active { transform: scale(0.97); }
+  .layer-btn:active,
+  .mode-btn:active,
+  .arrow-tool:active,
+  .icon-item:active { transform: scale(0.97); }
+
   .modal-overlay {
     position: fixed;
     inset: 0;
@@ -391,7 +512,10 @@
     opacity: 0;
     transition: opacity 0.22s ease;
   }
-  .modal-overlay.show { display: flex; opacity: 1; }
+  .modal-overlay.show {
+    display: flex;
+    opacity: 1;
+  }
   .modal-box {
     background: #fff;
     border-radius: 12px;
@@ -403,12 +527,30 @@
     opacity: 0;
     transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.22s ease;
   }
-  .modal-overlay.show .modal-box { transform: scale(1); opacity: 1; }
-  .modal-box p { font-size: 15px; margin: 0 0 16px 0; color: #333; }
-  .modal-actions { display: flex; gap: 10px; justify-content: center; }
+  .modal-overlay.show .modal-box {
+    transform: scale(1);
+    opacity: 1;
+  }
+  .modal-box p {
+    font-size: 15px;
+    margin: 0 0 16px 0;
+    color: #333;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
   .modal-actions button { min-width: 80px; }
-  .modal-actions .danger { background: #e53935; color: #fff; border-color: #e53935; }
-  .modal-actions .danger:hover { background: #c62828; border-color: #c62828; }
+  .modal-actions .danger {
+    background: #e53935;
+    color: #fff;
+    border-color: #e53935;
+  }
+  .modal-actions .danger:hover {
+    background: #c62828;
+    border-color: #c62828;
+  }
 </style>
 </head>
 <body>
@@ -442,7 +584,7 @@
       <div class="export-menu" id="exportMenu">
         <button onclick="exportPNG('grid')">带网格线</button>
         <button onclick="exportPNG('noline')">不带网格线</button>
-        <button onclick="exportPNG('baseOnly')">只有底板</button>
+        <button onclick="exportPNG('iconOnly')">只有图标 + 箭头</button>
       </div>
     </div>
   </div>
@@ -464,6 +606,7 @@
       <div class="mode-btn active" data-mode="pve">PVE</div>
       <div class="mode-btn" data-mode="pvp">PVP</div>
     </div>
+
     <div class="base-setting disabled" id="baseSetting">
       <div class="base-header">
         <label>
@@ -478,9 +621,11 @@
         <div class="preview" id="basePreview" style="background:#fff;"></div>
       </div>
     </div>
+
     <div class="layer-switch">
       <div class="layer-btn" data-layer="arrow">箭头层</div>
     </div>
+
     <p class="hint" id="hint">
       · 图标层：点格子放置图标<br>
       · 橡皮擦在右侧工具栏
@@ -834,12 +979,14 @@ function resizeGrid() {
   if (newCols < 10 || newCols > 30 || newRows < 10 || newRows > 30) {
     alert('长和宽的范围都是 10–30'); return;
   }
+
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const g = gridData[r][c].ground;
       if (g && g !== 'empty') groundOverflow[`${r},${c}`] = g;
     }
   }
+
   const newData = [];
   for (let r = 0; r < newRows; r++) {
     const row = [];
@@ -847,22 +994,29 @@ function resizeGrid() {
       let ground = 'empty';
       let base = null;
       let arrows = [];
+
       const key = `${r},${c}`;
       if (groundOverflow[key]) {
         ground = groundOverflow[key];
       } else if (r < rows && c < cols) {
         ground = gridData[r][c].ground;
       }
-      if (r < rows && c < cols) base = gridData[r][c].base;
+
+      if (r < rows && c < cols) {
+        base = gridData[r][c].base;
+      }
+
       if (r < rows && c < cols) {
         arrows = gridData[r][c].arrows
           .filter(a => a.toR < newRows && a.toC < newCols)
           .slice();
       }
+
       row.push({ ground, base, arrows });
     }
     newData.push(row);
   }
+
   cols = newCols;
   rows = newRows;
   gridData = newData;
@@ -939,25 +1093,23 @@ function importJSON(e) {
 
 /* ===== 导出 PNG：三档 ===== */
 async function exportPNG(mode) {
-  // mode: 'grid' | 'noline' | 'baseOnly'
+  // mode: 'grid' | 'noline' | 'iconOnly'
   document.getElementById('exportMenu').classList.remove('show');
 
-  const withGridLines = (mode === 'grid');
-  const baseOnly = (mode === 'baseOnly');
-  const showGridStructure = (mode === 'grid'); // grid 模式有 gap，其他模式无 gap
+  const withGridLines = (mode === 'grid');       // 带网格线：有灰底+格线
+  const drawBase = (mode !== 'iconOnly');        // iconOnly 不画底板
+  const hasGap = (mode === 'grid');              // grid 模式有 1px gap，其余模式格子无缝
 
   const step = CELL_SIZE + GAP;
   const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
   const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
 
   const usedIcons = new Set();
-  if (!baseOnly) {
-    for (let r = 0; r < rows; r++)
-      for (let c = 0; c < cols; c++) {
-        const g = gridData[r][c].ground;
-        if (g && g !== 'empty') usedIcons.add(g);
-      }
-  }
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const g = gridData[r][c].ground;
+      if (g && g !== 'empty') usedIcons.add(g);
+    }
 
   const imgMap = {};
   await Promise.all([...usedIcons].map(id => new Promise(resolve => {
@@ -985,28 +1137,34 @@ async function exportPNG(mode) {
   };
 
   // 背景
-  ctx.fillStyle = withGridLines ? '#dddddd' : '#ffffff';
+  if (mode === 'grid') {
+    ctx.fillStyle = '#dddddd';
+  } else {
+    ctx.fillStyle = '#ffffff';
+  }
   ctx.fillRect(0, 0, totalW, totalH);
 
   // 底板
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const x = c * step, y = r * step;
-      const data = gridData[r][c];
+  if (drawBase) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const data = gridData[r][c];
 
-      if (data.base !== null && data.base !== undefined) {
-        const v = Math.round(255 * (1 - data.base / 100));
-        ctx.fillStyle = `rgb(${v},${v},${v})`;
-      } else {
-        ctx.fillStyle = '#ffffff';
-      }
+        if (data.base !== null && data.base !== undefined) {
+          const v = Math.round(255 * (1 - data.base / 100));
+          ctx.fillStyle = `rgb(${v},${v},${v})`;
+        } else {
+          ctx.fillStyle = '#ffffff';
+        }
 
-      if (showGridStructure) {
-        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
-      } else {
-        const wx = c * CELL_SIZE;
-        const wy = r * CELL_SIZE;
-        ctx.fillRect(wx, wy, CELL_SIZE, CELL_SIZE);
+        if (hasGap) {
+          const x = c * step, y = r * step;
+          ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+        } else {
+          const wx = c * CELL_SIZE;
+          const wy = r * CELL_SIZE;
+          ctx.fillRect(wx, wy, CELL_SIZE, CELL_SIZE);
+        }
       }
     }
   }
@@ -1023,87 +1181,85 @@ async function exportPNG(mode) {
     }
   }
 
-  // 图标（baseOnly 模式不画）
-  if (!baseOnly) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const data = gridData[r][c];
-        let x, y;
-        if (showGridStructure) {
-          x = c * step; y = r * step;
-        } else {
-          x = c * CELL_SIZE; y = r * CELL_SIZE;
-        }
-        if (data.ground && data.ground !== 'empty') {
-          const img = imgMap[data.ground];
-          if (img) ctx.drawImage(img, x, y, CELL_SIZE, CELL_SIZE);
-        }
+  // 图标
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const data = gridData[r][c];
+      let x, y;
+      if (hasGap) {
+        x = c * step; y = r * step;
+      } else {
+        x = c * CELL_SIZE; y = r * CELL_SIZE;
+      }
+      if (data.ground && data.ground !== 'empty') {
+        const img = imgMap[data.ground];
+        if (img) ctx.drawImage(img, x, y, CELL_SIZE, CELL_SIZE);
       }
     }
   }
 
-  // 箭头（baseOnly 模式不画）
-  if (!baseOnly) {
-    const { lineWidth, headLen, headWidth } = ARROW_STYLE;
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const data = gridData[r][c];
-        if (!data.arrows || data.arrows.length === 0) continue;
+  // 箭头
+  const { lineWidth, headLen, headWidth } = ARROW_STYLE;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const data = gridData[r][c];
+      if (!data.arrows || data.arrows.length === 0) continue;
 
-        let cx, cy;
-        if (showGridStructure) {
-          cx = c * step + CELL_SIZE/2;
-          cy = r * step + CELL_SIZE/2;
-        } else {
-          cx = c * CELL_SIZE + CELL_SIZE/2;
-          cy = r * CELL_SIZE + CELL_SIZE/2;
-        }
-
-        data.arrows.forEach(arrow => {
-          if (arrow.toR === undefined || arrow.toC === undefined) return;
-          let tx, ty;
-          if (showGridStructure) {
-            tx = arrow.toC * step + CELL_SIZE/2;
-            ty = arrow.toR * step + CELL_SIZE/2;
-          } else {
-            tx = arrow.toC * CELL_SIZE + CELL_SIZE/2;
-            ty = arrow.toR * CELL_SIZE + CELL_SIZE/2;
-          }
-          const dx = tx - cx, dy = ty - cy;
-          const dist = Math.hypot(dx, dy);
-          if (dist < 1) return;
-          const ux = dx / dist, uy = dy / dist;
-          const lineEndX = tx - ux * (headLen * 0.5);
-          const lineEndY = ty - uy * (headLen * 0.5);
-          ctx.strokeStyle = colorMap[arrow.color];
-          ctx.lineWidth = lineWidth;
-          ctx.lineCap = 'round';
-          ctx.globalAlpha = 0.85;
-          ctx.beginPath();
-          ctx.moveTo(cx, cy);
-          ctx.lineTo(lineEndX, lineEndY);
-          ctx.stroke();
-          const baseX = tx - ux * headLen;
-          const baseY = ty - uy * headLen;
-          const px = -uy, py = ux;
-          ctx.fillStyle = colorMap[arrow.color];
-          ctx.beginPath();
-          ctx.moveTo(tx, ty);
-          ctx.lineTo(baseX + px * (headWidth / 2), baseY + py * (headWidth / 2));
-          ctx.lineTo(baseX - px * (headWidth / 2), baseY - py * (headWidth / 2));
-          ctx.closePath();
-          ctx.fill();
-          ctx.globalAlpha = 1;
-        });
+      let cx, cy;
+      if (hasGap) {
+        cx = c * step + CELL_SIZE/2;
+        cy = r * step + CELL_SIZE/2;
+      } else {
+        cx = c * CELL_SIZE + CELL_SIZE/2;
+        cy = r * CELL_SIZE + CELL_SIZE/2;
       }
+
+      data.arrows.forEach(arrow => {
+        if (arrow.toR === undefined || arrow.toC === undefined) return;
+        let tx, ty;
+        if (hasGap) {
+          tx = arrow.toC * step + CELL_SIZE/2;
+          ty = arrow.toR * step + CELL_SIZE/2;
+        } else {
+          tx = arrow.toC * CELL_SIZE + CELL_SIZE/2;
+          ty = arrow.toR * CELL_SIZE + CELL_SIZE/2;
+        }
+        const dx = tx - cx, dy = ty - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) return;
+        const ux = dx / dist, uy = dy / dist;
+        const lineEndX = tx - ux * (headLen * 0.5);
+        const lineEndY = ty - uy * (headLen * 0.5);
+        ctx.strokeStyle = colorMap[arrow.color];
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = 'round';
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(lineEndX, lineEndY);
+        ctx.stroke();
+        const baseX = tx - ux * headLen;
+        const baseY = ty - uy * headLen;
+        const px = -uy, py = ux;
+        ctx.fillStyle = colorMap[arrow.color];
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(baseX + px * (headWidth / 2), baseY + py * (headWidth / 2));
+        ctx.lineTo(baseX - px * (headWidth / 2), baseY - py * (headWidth / 2));
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
     }
   }
+
+  const fileName = mode === 'grid' ? 'map-grid.png'
+                 : mode === 'noline' ? 'map-nogrid.png'
+                 : 'map-icon-only.png';
 
   const a = document.createElement('a');
   a.href = canvas.toDataURL('image/png');
-  a.download = mode === 'grid' ? 'map-grid.png'
-             : mode === 'noline' ? 'map-nogrid.png'
-             : 'map-baseonly.png';
+  a.download = fileName;
   a.click();
 }
 
@@ -1185,6 +1341,7 @@ document.querySelectorAll('.arrow-tool').forEach(el => {
   };
 });
 
+/* ===== 底板：滑条 + 数字输入框 双向同步 ===== */
 const baseLevel = document.getElementById('baseLevel');
 const baseLevelNum = document.getElementById('baseLevelNum');
 const basePreview = document.getElementById('basePreview');
@@ -1193,7 +1350,10 @@ function updateBasePreview() {
   const v = +baseLevel.value;
   const g = Math.round(255 * (1 - v / 100));
   basePreview.style.background = `rgb(${g},${g},${g})`;
-  if (baseLevelNum.value !== String(v)) baseLevelNum.value = v;
+
+  if (baseLevelNum.value !== String(v)) {
+    baseLevelNum.value = v;
+  }
   baseLevelNum.classList.toggle('at-max', v >= 100);
 }
 
@@ -1230,6 +1390,7 @@ baseLevelNum.addEventListener('wheel', (e) => {
 
 updateBasePreview();
 
+/* ===== 刻度条 ===== */
 function initTickBar(tickId, inputId, maxVal, hintId, minVal) {
   const tickBar = document.getElementById(tickId);
   const input = document.getElementById(inputId);
@@ -1273,6 +1434,7 @@ function initTickBar(tickId, inputId, maxVal, hintId, minVal) {
     let val = +input.value || 0;
     val = clamp(val);
     input.value = val;
+
     const offset = BAR_HEIGHT / 2 - (val * TICK_HEIGHT + TICK_HEIGHT / 2);
     ticksEl.style.transform = `translateY(${offset}px)`;
     updateMaxStyle();

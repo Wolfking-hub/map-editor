@@ -187,7 +187,6 @@
     width: max-content;
     flex-shrink: 0;
   }
-  /* 不显示网格线 */
   .grid.no-lines {
     gap: 0;
     background: #fff;
@@ -537,17 +536,17 @@
     </div>
     <button onclick="resizeGrid()">应用</button>
     <button class="danger" onclick="clearGrid()">清空</button>
-    <label style="display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer;">
-      <input type="checkbox" id="showGridLines" checked>
-      显示网格线
-    </label>
   </div>
   <div class="spacer"></div>
   <div class="row">
     <button class="primary" onclick="exportJSON()">导出 JSON</button>
     <button onclick="document.getElementById('importFile').click()">导入 JSON</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
-    <button class="primary" onclick="exportPNG()">导出 PNG</button>
+    <label style="display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer;">
+      <input type="checkbox" id="exportWithGrid" checked>
+      导出带网格线
+    </label>
+    <button class="primary" onclick="exportPNGFromUI()">导出 PNG</button>
   </div>
 </div>
 
@@ -705,13 +704,6 @@ let arrowStart = null;
 const CELL_SIZE = 48;
 const GAP = 1;
 
-/* ===== 显示网格线开关 ===== */
-function applyGridLines() {
-  const show = document.getElementById('showGridLines').checked;
-  document.getElementById('grid').classList.toggle('no-lines', !show);
-}
-document.getElementById('showGridLines').addEventListener('change', applyGridLines);
-
 function initGrid(c, r) {
   cols = c; rows = r;
   gridData = [];
@@ -725,7 +717,6 @@ function initGrid(c, r) {
   history = [JSON.stringify({ gridData, groundOverflow })];
   historyIndex = 0;
   renderGrid();
-  applyGridLines();
 }
 
 function renderIconGroups() {
@@ -786,7 +777,6 @@ function renderGrid() {
     }
   }
   renderArrows(gridEl);
-  applyGridLines();
 }
 
 function renderCellContent(cellEl, data) {
@@ -1053,7 +1043,6 @@ function importJSON(e) {
       document.getElementById('rowsInput').value = rows;
       history = [JSON.stringify({ gridData, groundOverflow })]; historyIndex = 0;
       renderGrid();
-      applyGridLines();
     } catch (err) {
       alert('导入失败：' + err.message);
     }
@@ -1062,10 +1051,15 @@ function importJSON(e) {
   e.target.value = '';
 }
 
-/* ===== 导出 PNG：所见即所得 ===== */
-async function exportPNG() {
-  const withGridLines = document.getElementById('showGridLines').checked;
+/* ===== 导出 PNG：根据复选框决定导出哪种 ===== */
+function exportPNGFromUI() {
+  const withGrid = document.getElementById('exportWithGrid').checked;
+  // 勾上 → 带网格线版本（调用 exportPNG(false)）
+  // 不勾 → 无网格线版本（调用 exportPNG(true)）
+  exportPNG(!withGrid);
+}
 
+async function exportPNG(withGridLines) {
   const step = CELL_SIZE + GAP;
   const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
   const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
@@ -1087,9 +1081,15 @@ async function exportPNG() {
     img.src = ICONS_DIR + file + ICON_EXT;
   })));
 
+  // 高清屏适配
+  const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
-  canvas.width = totalW; canvas.height = totalH;
+  canvas.width = totalW * dpr;
+  canvas.height = totalH * dpr;
+  canvas.style.width = totalW + 'px';
+  canvas.style.height = totalH + 'px';
   const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
 
   const colorMap = {
     'arrow-red': '#e53935', 'arrow-blue': '#1e88e5',
@@ -1100,12 +1100,12 @@ async function exportPNG() {
   ctx.fillStyle = withGridLines ? '#dddddd' : '#ffffff';
   ctx.fillRect(0, 0, totalW, totalH);
 
+  // 底板 + 白色底
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const x = c * step, y = r * step;
       const data = gridData[r][c];
 
-      // 底板
       if (data.base !== null && data.base !== undefined) {
         const v = Math.round(255 * (1 - data.base / 100));
         ctx.fillStyle = `rgb(${v},${v},${v})`;
@@ -1113,11 +1113,9 @@ async function exportPNG() {
         ctx.fillStyle = '#ffffff';
       }
 
-      // 无网格线时，格子画满整格（无 gap）
       if (withGridLines) {
         ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
       } else {
-        // 无网格线：格子连成一片
         const wx = c * CELL_SIZE;
         const wy = r * CELL_SIZE;
         ctx.fillRect(wx, wy, CELL_SIZE, CELL_SIZE);

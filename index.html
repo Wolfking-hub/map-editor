@@ -432,6 +432,49 @@
     line-height: 1.5;
   }
 
+  /* ===== 导出 PNG 下拉菜单 ===== */
+  .export-menu-wrap {
+    position: relative;
+    display: inline-block;
+  }
+  .export-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    padding: 6px;
+    display: none;
+    z-index: 100;
+    min-width: 180px;
+    transform-origin: top right;
+    transform: scale(0.95);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+  .export-menu.show {
+    display: block;
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
+  .export-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .export-menu button:hover { background: #f0f0f0; }
+
   @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -542,11 +585,13 @@
     <button class="primary" onclick="exportJSON()">导出 JSON</button>
     <button onclick="document.getElementById('importFile').click()">导入 JSON</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
-    <label style="display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer;">
-      <input type="checkbox" id="exportWithGrid" checked>
-      导出带网格线
-    </label>
-    <button class="primary" onclick="exportPNGFromUI()">导出 PNG</button>
+    <div class="export-menu-wrap">
+      <button class="primary" onclick="toggleExportMenu(event)">导出 PNG ▾</button>
+      <div class="export-menu" id="exportMenu">
+        <button onclick="exportPNG(false)">带网格线</button>
+        <button onclick="exportPNG(true)">不带网格线</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1051,15 +1096,9 @@ function importJSON(e) {
   e.target.value = '';
 }
 
-/* ===== 导出 PNG：根据复选框决定导出哪种 ===== */
-function exportPNGFromUI() {
-  const withGrid = document.getElementById('exportWithGrid').checked;
-  // 勾上 → 带网格线版本（调用 exportPNG(false)）
-  // 不勾 → 无网格线版本（调用 exportPNG(true)）
-  exportPNG(!withGrid);
-}
-
+/* ===== 导出 PNG：两个版本 ===== */
 async function exportPNG(withGridLines) {
+  document.getElementById('exportMenu').classList.remove('show');
   const step = CELL_SIZE + GAP;
   const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
   const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
@@ -1081,7 +1120,6 @@ async function exportPNG(withGridLines) {
     img.src = ICONS_DIR + file + ICON_EXT;
   })));
 
-  // 高清屏适配
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
   canvas.width = totalW * dpr;
@@ -1096,11 +1134,9 @@ async function exportPNG(withGridLines) {
     'arrow-green': '#43a047', 'arrow-yellow': '#fbc02d'
   };
 
-  // 背景
   ctx.fillStyle = withGridLines ? '#dddddd' : '#ffffff';
   ctx.fillRect(0, 0, totalW, totalH);
 
-  // 底板 + 白色底
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const x = c * step, y = r * step;
@@ -1123,7 +1159,6 @@ async function exportPNG(withGridLines) {
     }
   }
 
-  // 网格线
   if (withGridLines) {
     ctx.strokeStyle = '#dddddd';
     ctx.lineWidth = 1;
@@ -1135,7 +1170,6 @@ async function exportPNG(withGridLines) {
     }
   }
 
-  // 图标
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const data = gridData[r][c];
@@ -1152,7 +1186,6 @@ async function exportPNG(withGridLines) {
     }
   }
 
-  // 箭头
   const { lineWidth, headLen, headWidth } = ARROW_STYLE;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -1212,6 +1245,15 @@ async function exportPNG(withGridLines) {
   a.download = withGridLines ? 'map-grid.png' : 'map-nogrid.png';
   a.click();
 }
+
+function toggleExportMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('exportMenu');
+  menu.classList.toggle('show');
+}
+document.addEventListener('click', () => {
+  document.getElementById('exportMenu').classList.remove('show');
+});
 
 function replayFade(el) {
   if (!el) return;

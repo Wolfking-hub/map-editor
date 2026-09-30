@@ -280,7 +280,6 @@
     pointer-events: none;
   }
 
-  /* 底板设置 */
   .base-setting {
     display: flex;
     flex-direction: column;
@@ -1137,7 +1136,8 @@ async function exportPNG(withGridLines) {
       } else {
         ctx.fillStyle = '#ffffff';
       }
-      ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+      // 多画 1px，填满 gap
+      ctx.fillRect(x, y, CELL_SIZE + GAP, CELL_SIZE + GAP);
 
       if (withGridLines) {
         ctx.strokeStyle = '#dddddd';
@@ -1275,7 +1275,6 @@ document.querySelectorAll('.arrow-tool').forEach(el => {
   };
 });
 
-/* ===== 底板：滑条 + 数字输入框 双向同步 ===== */
 const baseLevel = document.getElementById('baseLevel');
 const baseLevelNum = document.getElementById('baseLevelNum');
 const basePreview = document.getElementById('basePreview');
@@ -1324,7 +1323,6 @@ baseLevelNum.addEventListener('wheel', (e) => {
 
 updateBasePreview();
 
-/* ===== 刻度条 ===== */
 function initTickBar(tickId, inputId, maxVal, hintId, minVal) {
   const tickBar = document.getElementById(tickId);
   const input = document.getElementById(inputId);

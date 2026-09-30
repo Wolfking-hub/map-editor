@@ -187,6 +187,12 @@
     width: max-content;
     flex-shrink: 0;
   }
+  /* 不显示网格线 */
+  .grid.no-lines {
+    gap: 0;
+    background: #fff;
+    border-color: #fff;
+  }
   .cell {
     width: 48px;
     height: 48px;
@@ -427,48 +433,6 @@
     line-height: 1.5;
   }
 
-  .export-menu-wrap {
-    position: relative;
-    display: inline-block;
-  }
-  .export-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 6px;
-    background: #fff;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    padding: 6px;
-    display: none;
-    z-index: 100;
-    min-width: 180px;
-    transform-origin: top right;
-    transform: scale(0.95);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.18s ease, transform 0.18s ease;
-  }
-  .export-menu.show {
-    display: block;
-    opacity: 1;
-    transform: scale(1);
-    pointer-events: auto;
-  }
-  .export-menu button {
-    display: block;
-    width: 100%;
-    text-align: left;
-    border: none;
-    background: transparent;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .export-menu button:hover { background: #f0f0f0; }
-
   @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -573,19 +537,17 @@
     </div>
     <button onclick="resizeGrid()">应用</button>
     <button class="danger" onclick="clearGrid()">清空</button>
+    <label style="display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer;">
+      <input type="checkbox" id="showGridLines" checked>
+      显示网格线
+    </label>
   </div>
   <div class="spacer"></div>
   <div class="row">
     <button class="primary" onclick="exportJSON()">导出 JSON</button>
     <button onclick="document.getElementById('importFile').click()">导入 JSON</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
-    <div class="export-menu-wrap">
-      <button class="primary" onclick="toggleExportMenu(event)">导出 PNG ▾</button>
-      <div class="export-menu" id="exportMenu">
-        <button onclick="exportPNG(true)">带网格线</button>
-        <button onclick="exportPNG(false)">不带网格线</button>
-      </div>
-    </div>
+    <button class="primary" onclick="exportPNG()">导出 PNG</button>
   </div>
 </div>
 
@@ -743,6 +705,13 @@ let arrowStart = null;
 const CELL_SIZE = 48;
 const GAP = 1;
 
+/* ===== 显示网格线开关 ===== */
+function applyGridLines() {
+  const show = document.getElementById('showGridLines').checked;
+  document.getElementById('grid').classList.toggle('no-lines', !show);
+}
+document.getElementById('showGridLines').addEventListener('change', applyGridLines);
+
 function initGrid(c, r) {
   cols = c; rows = r;
   gridData = [];
@@ -756,6 +725,7 @@ function initGrid(c, r) {
   history = [JSON.stringify({ gridData, groundOverflow })];
   historyIndex = 0;
   renderGrid();
+  applyGridLines();
 }
 
 function renderIconGroups() {
@@ -816,6 +786,7 @@ function renderGrid() {
     }
   }
   renderArrows(gridEl);
+  applyGridLines();
 }
 
 function renderCellContent(cellEl, data) {
@@ -1082,6 +1053,7 @@ function importJSON(e) {
       document.getElementById('rowsInput').value = rows;
       history = [JSON.stringify({ gridData, groundOverflow })]; historyIndex = 0;
       renderGrid();
+      applyGridLines();
     } catch (err) {
       alert('导入失败：' + err.message);
     }
@@ -1090,8 +1062,10 @@ function importJSON(e) {
   e.target.value = '';
 }
 
-async function exportPNG(withGridLines) {
-  document.getElementById('exportMenu').classList.remove('show');
+/* ===== 导出 PNG：所见即所得 ===== */
+async function exportPNG() {
+  const withGridLines = document.getElementById('showGridLines').checked;
+
   const step = CELL_SIZE + GAP;
   const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
   const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
@@ -1122,7 +1096,8 @@ async function exportPNG(withGridLines) {
     'arrow-green': '#43a047', 'arrow-yellow': '#fbc02d'
   };
 
-  ctx.fillStyle = '#dddddd';
+  // 背景
+  ctx.fillStyle = withGridLines ? '#dddddd' : '#ffffff';
   ctx.fillRect(0, 0, totalW, totalH);
 
   for (let r = 0; r < rows; r++) {
@@ -1130,19 +1105,47 @@ async function exportPNG(withGridLines) {
       const x = c * step, y = r * step;
       const data = gridData[r][c];
 
+      // 底板
       if (data.base !== null && data.base !== undefined) {
         const v = Math.round(255 * (1 - data.base / 100));
         ctx.fillStyle = `rgb(${v},${v},${v})`;
       } else {
         ctx.fillStyle = '#ffffff';
       }
-      // 多画 1px，填满 gap
-      ctx.fillRect(x, y, CELL_SIZE + GAP, CELL_SIZE + GAP);
 
+      // 无网格线时，格子画满整格（无 gap）
       if (withGridLines) {
-        ctx.strokeStyle = '#dddddd';
-        ctx.lineWidth = 1;
+        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+      } else {
+        // 无网格线：格子连成一片
+        const wx = c * CELL_SIZE;
+        const wy = r * CELL_SIZE;
+        ctx.fillRect(wx, wy, CELL_SIZE, CELL_SIZE);
+      }
+    }
+  }
+
+  // 网格线
+  if (withGridLines) {
+    ctx.strokeStyle = '#dddddd';
+    ctx.lineWidth = 1;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = c * step, y = r * step;
         ctx.strokeRect(x + 0.5, y + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
+      }
+    }
+  }
+
+  // 图标
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const data = gridData[r][c];
+      let x, y;
+      if (withGridLines) {
+        x = c * step; y = r * step;
+      } else {
+        x = c * CELL_SIZE; y = r * CELL_SIZE;
       }
       if (data.ground && data.ground !== 'empty') {
         const img = imgMap[data.ground];
@@ -1151,17 +1154,32 @@ async function exportPNG(withGridLines) {
     }
   }
 
+  // 箭头
   const { lineWidth, headLen, headWidth } = ARROW_STYLE;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const data = gridData[r][c];
       if (!data.arrows || data.arrows.length === 0) continue;
-      const cx = c * step + CELL_SIZE/2;
-      const cy = r * step + CELL_SIZE/2;
+
+      let cx, cy;
+      if (withGridLines) {
+        cx = c * step + CELL_SIZE/2;
+        cy = r * step + CELL_SIZE/2;
+      } else {
+        cx = c * CELL_SIZE + CELL_SIZE/2;
+        cy = r * CELL_SIZE + CELL_SIZE/2;
+      }
+
       data.arrows.forEach(arrow => {
         if (arrow.toR === undefined || arrow.toC === undefined) return;
-        const tx = arrow.toC * step + CELL_SIZE/2;
-        const ty = arrow.toR * step + CELL_SIZE/2;
+        let tx, ty;
+        if (withGridLines) {
+          tx = arrow.toC * step + CELL_SIZE/2;
+          ty = arrow.toR * step + CELL_SIZE/2;
+        } else {
+          tx = arrow.toC * CELL_SIZE + CELL_SIZE/2;
+          ty = arrow.toR * CELL_SIZE + CELL_SIZE/2;
+        }
         const dx = tx - cx, dy = ty - cy;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) return;
@@ -1196,15 +1214,6 @@ async function exportPNG(withGridLines) {
   a.download = withGridLines ? 'map-grid.png' : 'map-nogrid.png';
   a.click();
 }
-
-function toggleExportMenu(e) {
-  e.stopPropagation();
-  const menu = document.getElementById('exportMenu');
-  menu.classList.toggle('show');
-}
-document.addEventListener('click', () => {
-  document.getElementById('exportMenu').classList.remove('show');
-});
 
 function replayFade(el) {
   if (!el) return;

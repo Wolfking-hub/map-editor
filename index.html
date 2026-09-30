@@ -443,7 +443,7 @@
     padding: 6px;
     display: none;
     z-index: 100;
-    min-width: 200px;
+    min-width: 180px;
     transform-origin: top right;
     transform: scale(0.95);
     opacity: 0;
@@ -584,7 +584,6 @@
       <div class="export-menu" id="exportMenu">
         <button onclick="exportPNG('grid')">带网格线</button>
         <button onclick="exportPNG('noline')">不带网格线</button>
-        <button onclick="exportPNG('iconOnly')">只有图标 + 箭头</button>
       </div>
     </div>
   </div>
@@ -1091,19 +1090,17 @@ function importJSON(e) {
   e.target.value = '';
 }
 
-/* ===== 导出 PNG：三档 ===== */
+/* ===== 导出 PNG：两档 ===== */
 async function exportPNG(mode) {
-  // mode: 'grid' | 'noline' | 'iconOnly'
+  // mode: 'grid' | 'noline'
   document.getElementById('exportMenu').classList.remove('show');
 
-  const withGridLines = (mode === 'grid');       // 带网格线：有灰底+格线
-  const drawBase = (mode !== 'iconOnly');        // iconOnly 不画底板
-  const hasGap = (mode === 'grid');              // grid 模式有 1px gap，其余模式格子无缝
-
+  const withGap = (mode === 'grid');   // grid 模式用 gap 露灰底当格线
   const step = CELL_SIZE + GAP;
   const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
   const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
 
+  // 收集要加载的图标
   const usedIcons = new Set();
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++) {
@@ -1121,7 +1118,7 @@ async function exportPNG(mode) {
     img.src = ICONS_DIR + file + ICON_EXT;
   })));
 
-  // 高清屏适配
+  // DPR 高清适配
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
   canvas.width = totalW * dpr;
@@ -1137,46 +1134,27 @@ async function exportPNG(mode) {
   };
 
   // 背景
-  if (mode === 'grid') {
-    ctx.fillStyle = '#dddddd';
-  } else {
-    ctx.fillStyle = '#ffffff';
-  }
+  ctx.fillStyle = withGap ? '#dddddd' : '#ffffff';
   ctx.fillRect(0, 0, totalW, totalH);
 
-  // 底板
-  if (drawBase) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const data = gridData[r][c];
+  // 每格：底板 + 白底
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const data = gridData[r][c];
 
-        if (data.base !== null && data.base !== undefined) {
-          const v = Math.round(255 * (1 - data.base / 100));
-          ctx.fillStyle = `rgb(${v},${v},${v})`;
-        } else {
-          ctx.fillStyle = '#ffffff';
-        }
-
-        if (hasGap) {
-          const x = c * step, y = r * step;
-          ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
-        } else {
-          const wx = c * CELL_SIZE;
-          const wy = r * CELL_SIZE;
-          ctx.fillRect(wx, wy, CELL_SIZE, CELL_SIZE);
-        }
+      if (data.base !== null && data.base !== undefined) {
+        const v = Math.round(255 * (1 - data.base / 100));
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
+      } else {
+        ctx.fillStyle = '#ffffff';
       }
-    }
-  }
 
-  // 网格线
-  if (withGridLines) {
-    ctx.strokeStyle = '#e8e8e8';
-    ctx.lineWidth = 1;
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
+      if (withGap) {
         const x = c * step, y = r * step;
-        ctx.strokeRect(x + 0.5, y + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
+        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+      } else {
+        const x = c * CELL_SIZE, y = r * CELL_SIZE;
+        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
       }
     }
   }
@@ -1185,12 +1163,8 @@ async function exportPNG(mode) {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const data = gridData[r][c];
-      let x, y;
-      if (hasGap) {
-        x = c * step; y = r * step;
-      } else {
-        x = c * CELL_SIZE; y = r * CELL_SIZE;
-      }
+      const x = withGap ? c * step : c * CELL_SIZE;
+      const y = withGap ? r * step : r * CELL_SIZE;
       if (data.ground && data.ground !== 'empty') {
         const img = imgMap[data.ground];
         if (img) ctx.drawImage(img, x, y, CELL_SIZE, CELL_SIZE);
@@ -1205,25 +1179,14 @@ async function exportPNG(mode) {
       const data = gridData[r][c];
       if (!data.arrows || data.arrows.length === 0) continue;
 
-      let cx, cy;
-      if (hasGap) {
-        cx = c * step + CELL_SIZE/2;
-        cy = r * step + CELL_SIZE/2;
-      } else {
-        cx = c * CELL_SIZE + CELL_SIZE/2;
-        cy = r * CELL_SIZE + CELL_SIZE/2;
-      }
+      const cx = withGap ? c * step + CELL_SIZE/2 : c * CELL_SIZE + CELL_SIZE/2;
+      const cy = withGap ? r * step + CELL_SIZE/2 : r * CELL_SIZE + CELL_SIZE/2;
 
       data.arrows.forEach(arrow => {
         if (arrow.toR === undefined || arrow.toC === undefined) return;
-        let tx, ty;
-        if (hasGap) {
-          tx = arrow.toC * step + CELL_SIZE/2;
-          ty = arrow.toR * step + CELL_SIZE/2;
-        } else {
-          tx = arrow.toC * CELL_SIZE + CELL_SIZE/2;
-          ty = arrow.toR * CELL_SIZE + CELL_SIZE/2;
-        }
+        const tx = withGap ? arrow.toC * step + CELL_SIZE/2 : arrow.toC * CELL_SIZE + CELL_SIZE/2;
+        const ty = withGap ? arrow.toR * step + CELL_SIZE/2 : arrow.toR * CELL_SIZE + CELL_SIZE/2;
+
         const dx = tx - cx, dy = ty - cy;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) return;
@@ -1253,10 +1216,7 @@ async function exportPNG(mode) {
     }
   }
 
-  const fileName = mode === 'grid' ? 'map-grid.png'
-                 : mode === 'noline' ? 'map-nogrid.png'
-                 : 'map-icon-only.png';
-
+  const fileName = mode === 'grid' ? 'map-grid.png' : 'map-nogrid.png';
   const a = document.createElement('a');
   a.href = canvas.toDataURL('image/png');
   a.download = fileName;

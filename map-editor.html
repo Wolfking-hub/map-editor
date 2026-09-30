@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>地图编辑器</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    padding: 16px;
+    background: #f5f5f7;
+    color: #1d1d1f;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  h1 { font-size: 20px; margin: 0 0 12px 0; }
+
+  .panel {
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    width: 100%;
+    max-width: 1200px;
+  }
+  .panel h2 { font-size: 14px; margin: 0 0 8px 0; color: #555; }
+
+  .top-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    width: 100%;
+    max-width: 1200px;
+  }
+  .top-bar .row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .top-bar label { font-size: 13px; }
+  .top-bar .spacer { flex: 1; }
+
+  button {
+    padding: 8px 12px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: #fafafa;
+    cursor: pointer;
+  }
+  button:hover { background: #f0f0f0; }
+  button.primary { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+  button.primary:hover { background: #1557b0; }
+
+  button.danger {
+    color: #e53935;
+    border-color: #e53935;
+    background: #fff;
+    min-width: 90px;
+  }
+  button.danger:hover {
+    background: #ffe5e5;
+    border-color: #c62828;
+    color: #c62828;
+  }
+
+  .wheel-wrap {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    position: relative;
+  }
+  .wheel-wrap input[type="number"] {
+    width: 100px;
+    padding: 6px 46px 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 13px;
+    -moz-appearance: textfield;
+  }
+  .wheel-wrap input[type="number"]::-webkit-outer-spin-button,
+  .wheel-wrap input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .wheel-wrap input.at-max {
+    border-color: #e53935;
+    background: #fff5f5;
+    color: #e53935;
+  }
+  .wheel-wrap input.shake {
+    animation: shake 0.25s ease;
+  }
+  @keyframes shake {
+    0% { transform: translateX(0); }
+    20% { transform: translateX(-3px); }
+    40% { transform: translateX(3px); }
+    60% { transform: translateX(-2px); }
+    80% { transform: translateX(2px); }
+    100% { transform: translateX(0); }
+  }
+  .tick-bar {
+    width: 14px;
+    height: 30px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #fafafa;
+    position: relative;
+    overflow: hidden;
+    cursor: ns-resize;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .tick-bar .ticks {
+    position: absolute;
+    left: 0; right: 0;
+    top: 0;
+    transition: transform 0.08s linear;
+  }
+  .tick-bar .tick {
+    height: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tick-bar .tick::before {
+    content: '';
+    display: block;
+    width: 6px;
+    height: 1px;
+    background: #bbb;
+  }
+  .tick-bar .tick.major::before { width: 10px; background: #888; }
+  .tick-bar .indicator {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 2px;
+    background: #1a73e8;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+  .max-hint {
+    position: absolute;
+    right: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: #e53935;
+    white-space: nowrap;
+    display: none;
+    pointer-events: none;
+  }
+  .max-hint.show { display: inline; }
+
+  .map-panel {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    max-width: 1200px;
+    margin-bottom: 12px;
+    overflow: auto;
+    min-height: 300px;
+    max-height: 75vh;
+  }
+  .grid-wrap {
+    overflow: auto;
+    max-width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .grid {
+    display: grid;
+    gap: 1px;
+    background: #ddd;
+    border: 1px solid #ccc;
+    user-select: none;
+    position: relative;
+    width: max-content;
+    flex-shrink: 0;
+  }
+  .cell {
+    width: 48px;
+    height: 48px;
+    background: #fff;
+    position: relative;
+    cursor: pointer;
+    overflow: visible;
+    transition: background 0.12s ease;
+  }
+  .cell:hover { background: #f0f7ff; }
+  .cell:active { transform: scale(0.96); }
+
+  .cell .base-block {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .cell .icon-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .cell.arrow-start { outline: 2px solid #1a73e8; outline-offset: -2px; }
+
+  .arrow-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .bottom-panel {
+    width: 100%;
+    max-width: 1200px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .layer-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 200px;
+  }
+  .layer-col h2 { font-size: 13px; margin: 0 0 2px 0; color: #555; }
+
+  .layer-switch {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .layer-btn {
+    padding: 8px 12px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: #fafafa;
+    cursor: pointer;
+    text-align: center;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .layer-btn.active { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
+
+  .mode-switch {
+    display: flex;
+    gap: 6px;
+  }
+  .mode-btn {
+    flex: 1;
+    padding: 6px 10px;
+    font-size: 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: #fafafa;
+    cursor: pointer;
+    text-align: center;
+  }
+  .mode-btn.active { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
+
+  .mode-switch.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  /* 底板设置 */
+  .base-setting {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    background: #fafafa;
+    border-radius: 8px;
+    border: 1px solid #eee;
+  }
+  .base-setting .base-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .base-setting label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #333;
+    cursor: pointer;
+    user-select: none;
+  }
+  .base-setting .base-num {
+    width: 52px;
+    padding: 3px 6px;
+    font-size: 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    text-align: center;
+    -moz-appearance: textfield;
+  }
+  .base-setting .base-num::-webkit-outer-spin-button,
+  .base-setting .base-num::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .base-setting .base-num.at-max {
+    border-color: #e53935;
+    background: #fff5f5;
+    color: #e53935;
+  }
+  .base-setting .base-num.shake {
+    animation: shake 0.25s ease;
+  }
+  .base-setting .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #555;
+  }
+  .base-setting input[type="range"] {
+    flex: 1;
+    accent-color: #1a73e8;
+  }
+  .base-setting .preview {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    flex-shrink: 0;
+  }
+  .base-setting.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .icon-col { flex: 1; min-width: 400px; }
+  .icon-col h2 { font-size: 13px; margin: 0 0 6px 0; color: #555; }
+
+  .icon-groups { display: flex; flex-direction: column; gap: 12px; }
+  .icon-group h3 {
+    font-size: 13px;
+    color: #888;
+    margin: 0 0 6px 0;
+    font-weight: 600;
+  }
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: 8px;
+  }
+  .icon-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    user-select: none;
+    background: #fafafa;
+  }
+  .icon-item:hover { background: #f0f0f0; }
+  .icon-item.active { border-color: #1a73e8; background: #e8f0fe; }
+  .icon-item img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    pointer-events: none;
+  }
+  .icon-item .name {
+    font-size: 11px;
+    color: #555;
+    margin-top: 4px;
+    text-align: center;
+    line-height: 1.2;
+    word-break: break-all;
+  }
+
+  .arrow-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+  .arrow-tool {
+    padding: 6px 10px;
+    font-size: 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: #fafafa;
+    cursor: pointer;
+    user-select: none;
+  }
+  .arrow-tool.active { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
+  .arrow-tool.arrow-red { border-left: 4px solid #e53935; }
+  .arrow-tool.arrow-blue { border-left: 4px solid #1e88e5; }
+  .arrow-tool.arrow-green { border-left: 4px solid #43a047; }
+  .arrow-tool.arrow-yellow { border-left: 4px solid #fbc02d; }
+
+  .arrow-tool.eraser-tool {
+    color: #e53935;
+    border-color: #e53935;
+    background: #fff;
+  }
+  .arrow-tool.eraser-tool:hover { background: #ffe5e5; }
+  .arrow-tool.eraser-tool.active {
+    background: #e53935;
+    color: #fff;
+    border-color: #e53935;
+  }
+
+  .hint {
+    font-size: 11px;
+    color: #999;
+    margin: 8px 0 0 0;
+    line-height: 1.5;
+  }
+
+  .export-menu-wrap {
+    position: relative;
+    display: inline-block;
+  }
+  .export-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    padding: 6px;
+    display: none;
+    z-index: 100;
+    min-width: 180px;
+    transform-origin: top right;
+    transform: scale(0.95);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+  .export-menu.show {
+    display: block;
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
+  .export-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .export-menu button:hover { background: #f0f0f0; }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .icon-col { animation: fadeInUp 0.25s ease both; }
+  .icon-group { animation: fadeInUp 0.28s ease both; }
+  .icon-group:nth-child(1) { animation-delay: 0.02s; }
+  .icon-group:nth-child(2) { animation-delay: 0.06s; }
+  .icon-group:nth-child(3) { animation-delay: 0.10s; }
+  .icon-group:nth-child(4) { animation-delay: 0.14s; }
+  .icon-item { animation: fadeIn 0.25s ease both; }
+
+  .layer-btn,
+  .mode-btn,
+  .arrow-tool,
+  .icon-item,
+  button {
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, opacity 0.18s ease, transform 0.1s ease;
+  }
+  button:active { transform: scale(0.97); }
+  .layer-btn:active,
+  .mode-btn:active,
+  .arrow-tool:active,
+  .icon-item:active { transform: scale(0.97); }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.25);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.22s ease;
+  }
+  .modal-overlay.show {
+    display: flex;
+    opacity: 1;
+  }
+  .modal-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+    max-width: 360px;
+    text-align: center;
+    transform: scale(0.9);
+    opacity: 0;
+    transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.22s ease;
+  }
+  .modal-overlay.show .modal-box {
+    transform: scale(1);
+    opacity: 1;
+  }
+  .modal-box p {
+    font-size: 15px;
+    margin: 0 0 16px 0;
+    color: #333;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+  .modal-actions button { min-width: 80px; }
+  .modal-actions .danger {
+    background: #e53935;
+    color: #fff;
+    border-color: #e53935;
+  }
+  .modal-actions .danger:hover {
+    background: #c62828;
+    border-color: #c62828;
+  }
+</style>
+</head>
+<body>
+
+<h1>地图编辑器</h1>
+
+<div class="top-bar">
+  <div class="row">
+    <label>长（列）</label>
+    <div class="wheel-wrap">
+      <input type="number" id="colsInput" value="12" min="10" max="30">
+      <div class="tick-bar" id="colsTick"><div class="ticks"></div><div class="indicator"></div></div>
+      <span class="max-hint" id="colsHint">到顶了喵！</span>
+    </div>
+    <label>宽（行）</label>
+    <div class="wheel-wrap">
+      <input type="number" id="rowsInput" value="12" min="10" max="30">
+      <div class="tick-bar" id="rowsTick"><div class="ticks"></div><div class="indicator"></div></div>
+      <span class="max-hint" id="rowsHint">到顶了喵！</span>
+    </div>
+    <button onclick="resizeGrid()">应用</button>
+    <button class="danger" onclick="clearGrid()">清空</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="row">
+    <button class="primary" onclick="exportJSON()">导出 JSON</button>
+    <button onclick="document.getElementById('importFile').click()">导入 JSON</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+    <div class="export-menu-wrap">
+      <button class="primary" onclick="toggleExportMenu(event)">导出 PNG ▾</button>
+      <div class="export-menu" id="exportMenu">
+        <button onclick="exportPNG(true)">带网格线</button>
+        <button onclick="exportPNG(false)">不带网格线</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="map-panel panel" id="mapPanel">
+  <div class="grid-wrap">
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+
+<div class="bottom-panel panel">
+  <div class="layer-col">
+    <h2>编辑图层</h2>
+    <div class="layer-switch">
+      <div class="layer-btn active" data-layer="ground">地图格子</div>
+    </div>
+    <div class="mode-switch disabled" id="modeSwitch">
+      <div class="mode-btn active" data-mode="pve">PVE</div>
+      <div class="mode-btn" data-mode="pvp">PVP</div>
+    </div>
+
+    <div class="base-setting disabled" id="baseSetting">
+      <div class="base-header">
+        <label>
+          <input type="checkbox" id="baseEnable">
+          放置图标时加底板
+        </label>
+        <input type="number" id="baseLevelNum" min="0" max="100" value="0" class="base-num">
+      </div>
+      <div class="slider-row">
+        <span>深浅</span>
+        <input type="range" id="baseLevel" min="0" max="100" value="0">
+        <div class="preview" id="basePreview" style="background:#fff;"></div>
+      </div>
+    </div>
+
+    <div class="layer-switch">
+      <div class="layer-btn" data-layer="arrow">箭头层</div>
+    </div>
+
+    <p class="hint" id="hint">
+      · 图标层：点格子放置图标<br>
+      · 橡皮擦在右侧工具栏
+    </p>
+  </div>
+
+  <div class="icon-col" id="groundTools">
+    <h2>图标</h2>
+    <div class="icon-groups" id="iconGroups"></div>
+    <div class="arrow-tools" style="margin-top: 10px;">
+      <div class="arrow-tool eraser-tool" data-type="eraser">橡皮擦</div>
+    </div>
+  </div>
+
+  <div class="icon-col" id="arrowTools" style="display:none;">
+    <h2>箭头</h2>
+    <div class="arrow-tools">
+      <div class="arrow-tool arrow-red" data-type="arrow-red">红箭头</div>
+      <div class="arrow-tool arrow-blue" data-type="arrow-blue">蓝箭头</div>
+      <div class="arrow-tool arrow-green" data-type="arrow-green">绿箭头</div>
+      <div class="arrow-tool arrow-yellow" data-type="arrow-yellow">黄箭头</div>
+    </div>
+    <div class="arrow-tools" style="margin-top: 10px;">
+      <div class="arrow-tool eraser-tool" data-type="eraser">橡皮擦</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal-box">
+    <p id="confirmText">确定清空地图？</p>
+    <div class="modal-actions">
+      <button onclick="closeConfirm()">取消</button>
+      <button class="danger" onclick="confirmClear()">清空</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ICON_GROUPS = {
+  pve: [
+    { name: '基础', icons: [
+      { id: 'p1', label: 'P1', file: 'start_p1' },
+      { id: 'p2', label: 'P2', file: 'start_p2' },
+      { id: 'p3', label: 'P3', file: 'start_p3' },
+      { id: 'p4', label: 'P4', file: 'start_p4' },
+      { id: 'safeguard', label: '保障点', file: 'safeguard' }
+    ]},
+    { name: '功能格', icons: [
+      { id: 'teleport',        label: '传送门',      file: 'teleport' },
+      { id: 'shop',            label: '商店',        file: 'shop' },
+      { id: 'event',           label: '全员事件',    file: 'event' },
+      { id: 'disease',         label: '疾行',        file: 'disease' },
+      { id: 'card_reward',     label: '卡牌奖励',    file: 'card_reward' },
+      { id: 'windfall',        label: '天降横财',    file: 'windfall' },
+      { id: 'disaster',        label: '天降横祸',    file: 'disaster' },
+      { id: 'monster',         label: '怪物',        file: 'monster' },
+      { id: 'heal',            label: '恢复',        file: 'heal' },
+      { id: 'monster_assault', label: '怪物突击门',  file: 'monster_assault' },
+      { id: 'candy',           label: '惊奇糖果机',  file: 'candy' },
+      { id: 'chip_shop',       label: '筹码商店',    file: 'chip_shop' },
+      { id: 'mind',            label: '思维强化',    file: 'mind' }
+    ]}
+  ],
+  pvp: [
+    { name: '基础', icons: [
+      { id: 'p1', label: 'P1', file: 'start_p1' },
+      { id: 'p2', label: 'P2', file: 'start_p2' },
+      { id: 'p3', label: 'P3', file: 'start_p3' },
+      { id: 'p4', label: 'P4', file: 'start_p4' },
+      { id: 'safeguard', label: '保障点', file: 'safeguard' }
+    ]},
+    { name: '功能格', icons: [
+      { id: 'teleport',    label: '传送门',    file: 'teleport' },
+      { id: 'assault',     label: '突击门',    file: 'assault' },
+      { id: 'divination',  label: '占卜',      file: 'divination' },
+      { id: 'shop',        label: '商店',      file: 'shop' },
+      { id: 'event',       label: '全员事件',  file: 'event' },
+      { id: 'guess',       label: '猜猜乐',    file: 'guess' },
+      { id: 'lottery',     label: '彩票',      file: 'lottery' },
+      { id: 'cannon',      label: '炮台',      file: 'cannon' },
+      { id: 'disease',     label: '疾行',      file: 'disease' },
+      { id: 'hospital',    label: '医院',      file: 'hospital' },
+      { id: 'card_reward', label: '卡牌奖励',  file: 'card_reward' },
+      { id: 'windfall',    label: '天降横财',  file: 'windfall' },
+      { id: 'fate',        label: '个人命运',  file: 'fate' },
+      { id: 'disaster',    label: '天降横祸',  file: 'disaster' },
+      { id: 'jump',        label: '跳跃',      file: 'jump' },
+      { id: 'heal',        label: '恢复',      file: 'heal' },
+      { id: 'gift',        label: '礼物',      file: 'gift' },
+      { id: 'console',     label: '机关控制台',file: 'console' },
+      { id: 'wanted',      label: 'Wanted',    file: 'wanted' }
+    ]}
+  ]
+};
+
+const ICONS_DIR = 'icons/';
+const ICON_EXT = '.png';
+const ICON_FILE_MAP = {};
+Object.values(ICON_GROUPS).forEach(groups =>
+  groups.forEach(g => g.icons.forEach(i => { ICON_FILE_MAP[i.id] = i.file; }))
+);
+
+const ARROW_STYLE = { lineWidth: 8, headLen: 24, headWidth: 20 };
+
+let cols = 12, rows = 12;
+let gridData = [];
+let groundOverflow = {};
+
+let currentLayer = 'ground';
+let currentMode = 'pve';
+let currentTool = 'eraser';
+let history = [], historyIndex = -1;
+let arrowStart = null;
+
+const CELL_SIZE = 48;
+const GAP = 1;
+
+function initGrid(c, r) {
+  cols = c; rows = r;
+  gridData = [];
+  for (let i = 0; i < rows; i++) {
+    const row = [];
+    for (let j = 0; j < cols; j++) row.push({ ground: 'empty', base: null, arrows: [] });
+    gridData.push(row);
+  }
+  groundOverflow = {};
+  arrowStart = null;
+  history = [JSON.stringify({ gridData, groundOverflow })];
+  historyIndex = 0;
+  renderGrid();
+}
+
+function renderIconGroups() {
+  const container = document.getElementById('iconGroups');
+  container.innerHTML = '';
+  const groups = ICON_GROUPS[currentMode];
+  groups.forEach((group, gi) => {
+    const g = document.createElement('div');
+    g.className = 'icon-group';
+    g.style.animationDelay = (gi * 0.04) + 's';
+    const h = document.createElement('h3');
+    h.textContent = group.name;
+    g.appendChild(h);
+    const grid = document.createElement('div');
+    grid.className = 'icon-grid';
+    group.icons.forEach((icon, ii) => {
+      const item = document.createElement('div');
+      item.className = 'icon-item' + (currentTool === icon.id ? ' active' : '');
+      item.dataset.type = icon.id;
+      item.style.animationDelay = (ii * 0.01) + 's';
+      const img = document.createElement('img');
+      img.src = ICONS_DIR + icon.file + ICON_EXT;
+      img.alt = icon.label;
+      img.onerror = () => { img.style.opacity = 0.2; };
+      item.appendChild(img);
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = icon.label;
+      item.appendChild(name);
+      item.onclick = () => { setTool(icon.id); arrowStart = null; renderGrid(); };
+      grid.appendChild(item);
+    });
+    g.appendChild(grid);
+    container.appendChild(g);
+  });
+}
+
+function renderGrid() {
+  const gridEl = document.getElementById('grid');
+  gridEl.style.gridTemplateColumns = `repeat(${cols}, ${CELL_SIZE}px)`;
+
+  const oldSvg = gridEl.querySelector('.arrow-svg');
+  if (oldSvg) oldSvg.remove();
+  gridEl.querySelectorAll('.cell').forEach(el => el.remove());
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.r = r;
+      cell.dataset.c = c;
+      if (arrowStart && arrowStart.r === r && arrowStart.c === c) {
+        cell.classList.add('arrow-start');
+      }
+      cell.onclick = () => handleCellClick(r, c);
+      renderCellContent(cell, gridData[r][c]);
+      gridEl.appendChild(cell);
+    }
+  }
+  renderArrows(gridEl);
+}
+
+function renderCellContent(cellEl, data) {
+  cellEl.innerHTML = '';
+
+  if (data.base !== null && data.base !== undefined) {
+    const base = document.createElement('div');
+    base.className = 'base-block';
+    const v = Math.round(255 * (1 - data.base / 100));
+    base.style.background = `rgb(${v},${v},${v})`;
+    cellEl.appendChild(base);
+  }
+
+  if (data.ground && data.ground !== 'empty') {
+    const file = ICON_FILE_MAP[data.ground];
+    if (file) {
+      const img = document.createElement('img');
+      img.className = 'icon-img';
+      img.src = ICONS_DIR + file + ICON_EXT;
+      img.alt = data.ground;
+      cellEl.appendChild(img);
+    }
+  }
+}
+
+function renderArrows(gridEl) {
+  const step = CELL_SIZE + GAP;
+  const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
+  const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.classList.add('arrow-svg');
+  svg.setAttribute('width', totalW);
+  svg.setAttribute('height', totalH);
+  svg.style.width = totalW + 'px';
+  svg.style.height = totalH + 'px';
+
+  const colors = {
+    'arrow-red': '#e53935', 'arrow-blue': '#1e88e5',
+    'arrow-green': '#43a047', 'arrow-yellow': '#fbc02d'
+  };
+  const { lineWidth, headLen, headWidth } = ARROW_STYLE;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const data = gridData[r][c];
+      if (!data.arrows || data.arrows.length === 0) continue;
+      const cx = c * step + CELL_SIZE / 2;
+      const cy = r * step + CELL_SIZE / 2;
+      data.arrows.forEach(arrow => {
+        const color = colors[arrow.color];
+        if (!color) return;
+        const tr = arrow.toR, tc = arrow.toC;
+        if (tr === undefined || tc === undefined) return;
+        const tx = tc * step + CELL_SIZE / 2;
+        const ty = tr * step + CELL_SIZE / 2;
+        const dx = tx - cx, dy = ty - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) return;
+        const ux = dx / dist, uy = dy / dist;
+        const lineEndX = tx - ux * (headLen * 0.5);
+        const lineEndY = ty - uy * (headLen * 0.5);
+        const line = document.createElementNS(svgNS, 'line');
+        line.setAttribute('x1', cx);
+        line.setAttribute('y1', cy);
+        line.setAttribute('x2', lineEndX);
+        line.setAttribute('y2', lineEndY);
+        line.setAttribute('stroke', color);
+        line.setAttribute('stroke-width', lineWidth);
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('opacity', '0.85');
+        svg.appendChild(line);
+        const baseX = tx - ux * headLen;
+        const baseY = ty - uy * headLen;
+        const px = -uy, py = ux;
+        const head = document.createElementNS(svgNS, 'polygon');
+        head.setAttribute('points',
+          `${tx},${ty} ` +
+          `${baseX + px * (headWidth / 2)},${baseY + py * (headWidth / 2)} ` +
+          `${baseX - px * (headWidth / 2)},${baseY - py * (headWidth / 2)}`
+        );
+        head.setAttribute('fill', color);
+        head.setAttribute('opacity', '0.85');
+        svg.appendChild(head);
+      });
+    }
+  }
+  gridEl.appendChild(svg);
+}
+
+function handleCellClick(r, c) {
+  if (currentTool === 'eraser') {
+    gridData[r][c].ground = 'empty';
+    gridData[r][c].base = null;
+    gridData[r][c].arrows = [];
+    delete groundOverflow[`${r},${c}`];
+    pushHistory();
+    renderGrid();
+    return;
+  }
+
+  if (currentLayer === 'arrow') {
+    if (!currentTool.startsWith('arrow-')) return;
+    if (!arrowStart) { arrowStart = { r, c }; renderGrid(); return; }
+    if (arrowStart.r === r && arrowStart.c === c) return;
+    gridData[arrowStart.r][arrowStart.c].arrows.push({
+      color: currentTool, toR: r, toC: c
+    });
+    arrowStart = null;
+    pushHistory(); renderGrid();
+    return;
+  }
+
+  if (currentTool.startsWith('arrow-')) return;
+  gridData[r][c].ground = currentTool;
+  groundOverflow[`${r},${c}`] = currentTool;
+
+  if (document.getElementById('baseEnable').checked) {
+    gridData[r][c].base = +document.getElementById('baseLevel').value;
+  }
+
+  pushHistory(); renderGrid();
+}
+
+function pushHistory() {
+  history = history.slice(0, historyIndex + 1);
+  history.push(JSON.stringify({ gridData, groundOverflow }));
+  historyIndex++;
+}
+function undo() {
+  if (historyIndex > 0) {
+    historyIndex--;
+    const s = JSON.parse(history[historyIndex]);
+    gridData = s.gridData;
+    groundOverflow = s.groundOverflow;
+    arrowStart = null; renderGrid();
+  }
+}
+function redo() {
+  if (historyIndex < history.length - 1) {
+    historyIndex++;
+    const s = JSON.parse(history[historyIndex]);
+    gridData = s.gridData;
+    groundOverflow = s.groundOverflow;
+    arrowStart = null; renderGrid();
+  }
+}
+document.addEventListener('keydown', (e) => {
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (!ctrl) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+});
+
+function resizeGrid() {
+  const newCols = +document.getElementById('colsInput').value;
+  const newRows = +document.getElementById('rowsInput').value;
+  if (newCols < 10 || newCols > 30 || newRows < 10 || newRows > 30) {
+    alert('长和宽的范围都是 10–30'); return;
+  }
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const g = gridData[r][c].ground;
+      if (g && g !== 'empty') groundOverflow[`${r},${c}`] = g;
+    }
+  }
+
+  const newData = [];
+  for (let r = 0; r < newRows; r++) {
+    const row = [];
+    for (let c = 0; c < newCols; c++) {
+      let ground = 'empty';
+      let base = null;
+      let arrows = [];
+
+      const key = `${r},${c}`;
+      if (groundOverflow[key]) {
+        ground = groundOverflow[key];
+      } else if (r < rows && c < cols) {
+        ground = gridData[r][c].ground;
+      }
+
+      if (r < rows && c < cols) {
+        base = gridData[r][c].base;
+      }
+
+      if (r < rows && c < cols) {
+        arrows = gridData[r][c].arrows
+          .filter(a => a.toR < newRows && a.toC < newCols)
+          .slice();
+      }
+
+      row.push({ ground, base, arrows });
+    }
+    newData.push(row);
+  }
+
+  cols = newCols;
+  rows = newRows;
+  gridData = newData;
+  arrowStart = null;
+  pushHistory();
+  renderGrid();
+}
+
+function clearGrid() {
+  document.getElementById('confirmModal').classList.add('show');
+}
+function closeConfirm() {
+  document.getElementById('confirmModal').classList.remove('show');
+}
+function confirmClear() {
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      gridData[r][c] = { ground: 'empty', base: null, arrows: [] };
+  groundOverflow = {};
+  arrowStart = null;
+  pushHistory();
+  renderGrid();
+  closeConfirm();
+}
+
+function exportJSON() {
+  const data = { cols, rows, cells: gridData, groundOverflow };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'map.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+function importJSON(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!data.cols || !data.rows || !data.cells) throw new Error('格式不对');
+      cols = data.cols; rows = data.rows; gridData = data.cells;
+      groundOverflow = data.groundOverflow || {};
+      const dirVec = {
+        right: [0, 1], left: [0, -1], up: [-1, 0], down: [1, 0],
+        'up-right': [-1, 1], 'up-left': [-1, -1],
+        'down-right': [1, 1], 'down-left': [1, -1]
+      };
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cell = gridData[r][c];
+          if (cell.base === undefined) cell.base = null;
+          if (!cell.arrows) { cell.arrows = []; continue; }
+          cell.arrows.forEach(a => {
+            if (a.toR === undefined && a.dir) {
+              const [dr, dc] = dirVec[a.dir] || [0, 1];
+              a.toR = r + dr; a.toC = c + dc;
+            }
+          });
+        }
+      }
+      arrowStart = null;
+      document.getElementById('colsInput').value = cols;
+      document.getElementById('rowsInput').value = rows;
+      history = [JSON.stringify({ gridData, groundOverflow })]; historyIndex = 0;
+      renderGrid();
+    } catch (err) {
+      alert('导入失败：' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+async function exportPNG(withGridLines) {
+  document.getElementById('exportMenu').classList.remove('show');
+  const step = CELL_SIZE + GAP;
+  const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
+  const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
+
+  const usedIcons = new Set();
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const g = gridData[r][c].ground;
+      if (g && g !== 'empty') usedIcons.add(g);
+    }
+
+  const imgMap = {};
+  await Promise.all([...usedIcons].map(id => new Promise(resolve => {
+    const file = ICON_FILE_MAP[id];
+    if (!file) { resolve(); return; }
+    const img = new Image();
+    img.onload = () => { imgMap[id] = img; resolve(); };
+    img.onerror = () => resolve();
+    img.src = ICONS_DIR + file + ICON_EXT;
+  })));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = totalW; canvas.height = totalH;
+  const ctx = canvas.getContext('2d');
+
+  const colorMap = {
+    'arrow-red': '#e53935', 'arrow-blue': '#1e88e5',
+    'arrow-green': '#43a047', 'arrow-yellow': '#fbc02d'
+  };
+
+  ctx.fillStyle = '#dddddd';
+  ctx.fillRect(0, 0, totalW, totalH);
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = c * step, y = r * step;
+      const data = gridData[r][c];
+
+      if (data.base !== null && data.base !== undefined) {
+        const v = Math.round(255 * (1 - data.base / 100));
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
+      } else {
+        ctx.fillStyle = '#ffffff';
+      }
+      ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+
+      if (withGridLines) {
+        ctx.strokeStyle = '#dddddd';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
+      }
+      if (data.ground && data.ground !== 'empty') {
+        const img = imgMap[data.ground];
+        if (img) ctx.drawImage(img, x, y, CELL_SIZE, CELL_SIZE);
+      }
+    }
+  }
+
+  const { lineWidth, headLen, headWidth } = ARROW_STYLE;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const data = gridData[r][c];
+      if (!data.arrows || data.arrows.length === 0) continue;
+      const cx = c * step + CELL_SIZE/2;
+      const cy = r * step + CELL_SIZE/2;
+      data.arrows.forEach(arrow => {
+        if (arrow.toR === undefined || arrow.toC === undefined) return;
+        const tx = arrow.toC * step + CELL_SIZE/2;
+        const ty = arrow.toR * step + CELL_SIZE/2;
+        const dx = tx - cx, dy = ty - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) return;
+        const ux = dx / dist, uy = dy / dist;
+        const lineEndX = tx - ux * (headLen * 0.5);
+        const lineEndY = ty - uy * (headLen * 0.5);
+        ctx.strokeStyle = colorMap[arrow.color];
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = 'round';
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(lineEndX, lineEndY);
+        ctx.stroke();
+        const baseX = tx - ux * headLen;
+        const baseY = ty - uy * headLen;
+        const px = -uy, py = ux;
+        ctx.fillStyle = colorMap[arrow.color];
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(baseX + px * (headWidth / 2), baseY + py * (headWidth / 2));
+        ctx.lineTo(baseX - px * (headWidth / 2), baseY - py * (headWidth / 2));
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+    }
+  }
+
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = withGridLines ? 'map-grid.png' : 'map-nogrid.png';
+  a.click();
+}
+
+function toggleExportMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('exportMenu');
+  menu.classList.toggle('show');
+}
+document.addEventListener('click', () => {
+  document.getElementById('exportMenu').classList.remove('show');
+});
+
+function replayFade(el) {
+  if (!el) return;
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = '';
+}
+
+document.querySelectorAll('.layer-btn').forEach(el => {
+  el.onclick = () => {
+    document.querySelectorAll('.layer-btn').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    currentLayer = el.dataset.layer;
+    arrowStart = null;
+
+    const modeSwitch = document.getElementById('modeSwitch');
+    const baseSetting = document.getElementById('baseSetting');
+
+    if (currentLayer === 'ground') {
+      document.getElementById('groundTools').style.display = 'block';
+      document.getElementById('arrowTools').style.display = 'none';
+      modeSwitch.classList.remove('disabled');
+      baseSetting.classList.remove('disabled');
+      setTool('eraser');
+      document.getElementById('hint').innerHTML = '· 图标层：点格子放置图标<br>· 橡皮擦在右侧工具栏';
+      replayFade(document.getElementById('groundTools'));
+    } else {
+      document.getElementById('groundTools').style.display = 'none';
+      document.getElementById('arrowTools').style.display = 'block';
+      modeSwitch.classList.add('disabled');
+      baseSetting.classList.add('disabled');
+      setTool('eraser');
+      document.getElementById('hint').innerHTML = '· 箭头层：先点起点，再点终点<br>· 橡皮擦在右侧工具栏';
+      replayFade(document.getElementById('arrowTools'));
+    }
+    renderGrid();
+  };
+});
+
+document.querySelectorAll('.mode-btn').forEach(el => {
+  el.onclick = () => {
+    document.querySelectorAll('.mode-btn').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    currentMode = el.dataset.mode;
+    currentTool = 'eraser';
+    renderIconGroups();
+    setTool('eraser');
+    renderGrid();
+    replayFade(document.getElementById('groundTools'));
+  };
+});
+
+function setTool(type) {
+  currentTool = type;
+  document.querySelectorAll('.icon-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.type === type);
+  });
+  document.querySelectorAll('.arrow-tool').forEach(el => {
+    el.classList.toggle('active', el.dataset.type === type);
+  });
+}
+
+document.querySelectorAll('.arrow-tool').forEach(el => {
+  el.onclick = () => {
+    setTool(el.dataset.type);
+    arrowStart = null;
+    renderGrid();
+  };
+});
+
+/* ===== 底板：滑条 + 数字输入框 双向同步 ===== */
+const baseLevel = document.getElementById('baseLevel');
+const baseLevelNum = document.getElementById('baseLevelNum');
+const basePreview = document.getElementById('basePreview');
+
+function updateBasePreview() {
+  const v = +baseLevel.value;
+  const g = Math.round(255 * (1 - v / 100));
+  basePreview.style.background = `rgb(${g},${g},${g})`;
+
+  if (baseLevelNum.value !== String(v)) {
+    baseLevelNum.value = v;
+  }
+  baseLevelNum.classList.toggle('at-max', v >= 100);
+}
+
+baseLevel.addEventListener('input', () => {
+  baseLevelNum.value = baseLevel.value;
+  updateBasePreview();
+});
+
+baseLevelNum.addEventListener('input', () => {
+  let v = +baseLevelNum.value;
+  if (isNaN(v)) v = 0;
+  if (v < 0) v = 0;
+  if (v > 100) v = 100;
+  baseLevelNum.value = v;
+  baseLevel.value = v;
+  updateBasePreview();
+});
+
+baseLevelNum.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  let v = +baseLevelNum.value || 0;
+  const step = e.deltaY < 0 ? 1 : -1;
+  if (step === 1 && v >= 100) {
+    baseLevelNum.classList.remove('shake');
+    void baseLevelNum.offsetWidth;
+    baseLevelNum.classList.add('shake');
+    return;
+  }
+  v = Math.max(0, Math.min(100, v + step));
+  baseLevelNum.value = v;
+  baseLevel.value = v;
+  updateBasePreview();
+}, { passive: false });
+
+updateBasePreview();
+
+/* ===== 刻度条 ===== */
+function initTickBar(tickId, inputId, maxVal, hintId, minVal) {
+  const tickBar = document.getElementById(tickId);
+  const input = document.getElementById(inputId);
+  const hint = document.getElementById(hintId);
+  const ticksEl = tickBar.querySelector('.ticks');
+
+  const MIN_VAL = minVal !== undefined ? minVal : 10;
+  const TOTAL_TICKS = Math.max((maxVal - MIN_VAL) * 2 + 10, 50);
+
+  ticksEl.innerHTML = '';
+  for (let i = 0; i < TOTAL_TICKS; i++) {
+    const t = document.createElement('div');
+    t.className = 'tick' + (i % 5 === 0 ? ' major' : '');
+    ticksEl.appendChild(t);
+  }
+
+  const TICK_HEIGHT = 8;
+  const BAR_HEIGHT = 30;
+
+  function clamp(val) {
+    if (val < MIN_VAL) return MIN_VAL;
+    if (val > maxVal) return maxVal;
+    return val;
+  }
+  function updateMaxStyle() {
+    const val = +input.value || 0;
+    if (val >= maxVal) {
+      input.classList.add('at-max');
+      hint.classList.add('show');
+    } else {
+      input.classList.remove('at-max');
+      hint.classList.remove('show');
+    }
+  }
+  function shake() {
+    input.classList.remove('shake');
+    void input.offsetWidth;
+    input.classList.add('shake');
+  }
+  function updateTicks() {
+    let val = +input.value || 0;
+    val = clamp(val);
+    input.value = val;
+
+    const offset = BAR_HEIGHT / 2 - (val * TICK_HEIGHT + TICK_HEIGHT / 2);
+    ticksEl.style.transform = `translateY(${offset}px)`;
+    updateMaxStyle();
+  }
+
+  input.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    const step = e.deltaY < 0 ? 1 : -1;
+    let val = +input.value || 0;
+    if (step === 1 && val >= maxVal) { shake(); return; }
+    input.value = clamp(val + step);
+    updateTicks();
+  }, { passive: false });
+
+  input.addEventListener('input', function() {
+    let val = +input.value || 0;
+    input.value = clamp(val);
+    updateTicks();
+  });
+
+  let dragging = false, startY = 0, startVal = 0;
+  function onDown(e) {
+    dragging = true;
+    startY = (e.touches ? e.touches[0].clientY : e.clientY);
+    startVal = +input.value || 0;
+    e.preventDefault();
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY);
+    const dy = y - startY;
+    let val = startVal - Math.round(dy / TICK_HEIGHT);
+    val = clamp(val);
+    input.value = val;
+    updateTicks();
+  }
+  function onUp() { dragging = false; }
+
+  tickBar.addEventListener('mousedown', onDown);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  tickBar.addEventListener('touchstart', onDown, { passive: false });
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('touchend', onUp);
+
+  updateTicks();
+}
+
+initTickBar('colsTick', 'colsInput', 30, 'colsHint', 10);
+initTickBar('rowsTick', 'rowsInput', 30, 'rowsHint', 10);
+
+initGrid(12, 12);
+renderIconGroups();
+setTool('eraser');
+</script>
+
+</body>
+</html>

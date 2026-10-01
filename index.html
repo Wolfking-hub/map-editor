@@ -71,6 +71,28 @@
     color: #c62828;
   }
 
+  .export-alpha-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #555;
+    cursor: pointer;
+    user-select: none;
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: #fafafa;
+    transition: all 0.15s ease;
+  }
+  .export-alpha-toggle input { margin: 0; }
+  .export-alpha-toggle.active {
+    background: #e8f0fe;
+    border-color: #1a73e8;
+    color: #1a73e8;
+    font-weight: 600;
+  }
+
   .wheel-wrap {
     display: flex;
     align-items: stretch;
@@ -586,6 +608,9 @@
         <button onclick="exportPNG('noline')">不带网格线</button>
       </div>
     </div>
+    <label class="export-alpha-toggle" id="exportAlphaToggle">
+      <input type="checkbox" id="exportArrowAlpha"> 箭头半透明
+    </label>
   </div>
 </div>
 
@@ -860,6 +885,9 @@ function renderArrows(gridEl) {
   };
   const { lineWidth, headLen, headWidth } = ARROW_STYLE;
 
+  // 编辑器预览也跟随「箭头半透明」开关
+  const arrowAlpha = document.getElementById('exportArrowAlpha').checked ? 0.85 : 1;
+
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const data = gridData[r][c];
@@ -887,7 +915,7 @@ function renderArrows(gridEl) {
         line.setAttribute('stroke', color);
         line.setAttribute('stroke-width', lineWidth);
         line.setAttribute('stroke-linecap', 'round');
-        line.setAttribute('opacity', '1');
+        line.setAttribute('opacity', arrowAlpha);
         svg.appendChild(line);
         const baseX = tx - ux * headLen;
         const baseY = ty - uy * headLen;
@@ -899,7 +927,7 @@ function renderArrows(gridEl) {
           `${baseX - px * (headWidth / 2)},${baseY - py * (headWidth / 2)}`
         );
         head.setAttribute('fill', color);
-        head.setAttribute('opacity', '1');
+        head.setAttribute('opacity', arrowAlpha);
         svg.appendChild(head);
       });
     }
@@ -1094,6 +1122,8 @@ async function exportPNG(mode) {
   document.getElementById('exportMenu').classList.remove('show');
 
   const withGap = (mode === 'grid');
+  const arrowAlpha = document.getElementById('exportArrowAlpha').checked ? 0.85 : 1;
+
   const step = CELL_SIZE + GAP;
   const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
   const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
@@ -1185,14 +1215,16 @@ async function exportPNG(mode) {
         const ux = dx / dist, uy = dy / dist;
         const lineEndX = tx - ux * (headLen * 0.5);
         const lineEndY = ty - uy * (headLen * 0.5);
+
+        ctx.globalAlpha = arrowAlpha;
         ctx.strokeStyle = colorMap[arrow.color];
         ctx.lineWidth = lineWidth;
         ctx.lineCap = 'round';
-        ctx.globalAlpha = 0.85;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(lineEndX, lineEndY);
         ctx.stroke();
+
         const baseX = tx - ux * headLen;
         const baseY = ty - uy * headLen;
         const px = -uy, py = ux;
@@ -1203,6 +1235,7 @@ async function exportPNG(mode) {
         ctx.lineTo(baseX - px * (headWidth / 2), baseY - py * (headWidth / 2));
         ctx.closePath();
         ctx.fill();
+
         ctx.globalAlpha = 1;
       });
     }
@@ -1222,6 +1255,12 @@ function toggleExportMenu(e) {
 }
 document.addEventListener('click', () => {
   document.getElementById('exportMenu').classList.remove('show');
+});
+
+/* 箭头半透明开关：高亮 + 立刻重绘编辑器预览 */
+document.getElementById('exportArrowAlpha').addEventListener('change', function() {
+  document.getElementById('exportAlphaToggle').classList.toggle('active', this.checked);
+  renderGrid();
 });
 
 function replayFade(el) {

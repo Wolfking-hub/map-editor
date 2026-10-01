@@ -184,19 +184,18 @@
   .map-panel {
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
     width: 100%;
     max-width: 1200px;
     margin-bottom: 12px;
-    overflow: auto;
-    min-height: 300px;
-    max-height: 75vh;
+    padding: 0;
   }
   .grid-wrap {
     overflow: auto;
     max-width: 100%;
+    max-height: 75vh;
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: flex-start;
   }
   .grid {
@@ -207,6 +206,7 @@
     user-select: none;
     position: relative;
     width: max-content;
+    height: max-content;
     flex-shrink: 0;
   }
   .cell {
@@ -584,13 +584,13 @@
   <div class="row">
     <label>长（列）</label>
     <div class="wheel-wrap">
-      <input type="number" id="colsInput" value="12" min="1" max="35">
+      <input type="number" id="colsInput" value="12" min="1" max="200">
       <div class="tick-bar" id="colsTick"><div class="ticks"></div><div class="indicator"></div></div>
       <span class="max-hint" id="colsHint">到顶了喵！</span>
     </div>
     <label>宽（行）</label>
     <div class="wheel-wrap">
-      <input type="number" id="rowsInput" value="12" min="1" max="35">
+      <input type="number" id="rowsInput" value="12" min="1" max="200">
       <div class="tick-bar" id="rowsTick"><div class="ticks"></div><div class="indicator"></div></div>
       <span class="max-hint" id="rowsHint">到顶了喵！</span>
     </div>
@@ -616,7 +616,7 @@
 </div>
 
 <div class="map-panel panel" id="mapPanel">
-  <div class="grid-wrap">
+  <div class="grid-wrap" id="gridWrap">
     <div class="grid" id="grid"></div>
   </div>
 </div>
@@ -850,7 +850,6 @@ function renderGrid() {
 
 /* ===== 橡皮擦：两段式 ===== */
 function eraserAt(r, c) {
-  // 第 1 段：删「以该格为终点」的箭头
   let removedAny = false;
   for (let rr = 0; rr < rows; rr++) {
     for (let cc = 0; cc < cols; cc++) {
@@ -867,7 +866,6 @@ function eraserAt(r, c) {
     return;
   }
 
-  // 第 2 段：清空该格（图标 + 底板 + 以该格为起点的箭头）
   gridData[r][c].ground = 'empty';
   gridData[r][c].base = null;
   gridData[r][c].arrows = [];
@@ -1047,11 +1045,10 @@ document.addEventListener('keydown', (e) => {
 function resizeGrid() {
   const newCols = +document.getElementById('colsInput').value;
   const newRows = +document.getElementById('rowsInput').value;
-  if (newCols < 1 || newCols > 35 || newRows < 1 || newRows > 35) {
-    alert('长和宽的范围都是 1–35'); return;
+  if (newCols < 1 || newCols > 200 || newRows < 1 || newRows > 200) {
+    alert('长和宽的范围都是 1–200'); return;
   }
 
-  // 把当前显示的图标 + 底板存进 overflow
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const g = gridData[r][c].ground;
@@ -1078,7 +1075,6 @@ function resizeGrid() {
         base = gridData[r][c].base;
       }
 
-      // 箭头正常裁剪
       let arrows = [];
       if (r < rows && c < cols) {
         arrows = gridData[r][c].arrows
@@ -1134,7 +1130,6 @@ function importJSON(e) {
       if (!data.cols || !data.rows || !data.cells) throw new Error('格式不对');
       cols = data.cols; rows = data.rows; gridData = data.cells;
       groundOverflow = data.groundOverflow || {};
-      // 兼容旧格式（旧 groundOverflow 是 "r,c": "iconId"）
       Object.keys(groundOverflow).forEach(k => {
         const v = groundOverflow[k];
         if (typeof v === 'string') {
@@ -1542,8 +1537,8 @@ function initTickBar(tickId, inputId, maxVal, hintId, minVal) {
   updateTicks();
 }
 
-initTickBar('colsTick', 'colsInput', 35, 'colsHint', 1);
-initTickBar('rowsTick', 'rowsInput', 35, 'rowsHint', 1);
+initTickBar('colsTick', 'colsInput', 200, 'colsHint', 1);
+initTickBar('rowsTick', 'rowsInput', 200, 'rowsHint', 1);
 
 initGrid(12, 12);
 renderIconGroups();
@@ -1551,6 +1546,60 @@ setTool('safeguard');
 
 document.getElementById('modeSwitch').classList.remove('disabled');
 document.getElementById('baseSetting').classList.remove('disabled');
+
+/* ===== WASD / 方向键 / 小键盘 滚动地图区 ===== */
+let isHoveringMap = false;
+const gridWrapEl = document.getElementById('gridWrap');
+
+gridWrapEl.addEventListener('mouseenter', () => { isHoveringMap = true; });
+gridWrapEl.addEventListener('mouseleave', () => { isHoveringMap = false; });
+
+const smoothStep = 80;
+const holdSpeed = 14;
+
+const keysHeld = { up: false, down: false, left: false, right: false };
+
+function keyDirection(key, code) {
+  if (key === 'w' || key === 'W' || key === 'ArrowUp' || code === 'Numpad8') return 'up';
+  if (key === 's' || key === 'S' || key === 'ArrowDown' || code === 'Numpad2') return 'down';
+  if (key === 'a' || key === 'A' || key === 'ArrowLeft' || code === 'Numpad4') return 'left';
+  if (key === 'd' || key === 'D' || key === 'ArrowRight' || code === 'Numpad6') return 'right';
+  return null;
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!isHoveringMap) return;
+  const dir = keyDirection(e.key, e.code);
+  if (!dir) return;
+  e.preventDefault();
+
+  if (!keysHeld[dir]) {
+    const dx = dir === 'left' ? -smoothStep : dir === 'right' ? smoothStep : 0;
+    const dy = dir === 'up' ? -smoothStep : dir === 'down' ? smoothStep : 0;
+    gridWrapEl.scrollBy({ left: dx, top: dy, behavior: 'smooth' });
+    keysHeld[dir] = true;
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  const dir = keyDirection(e.key, e.code);
+  if (!dir) return;
+  keysHeld[dir] = false;
+});
+
+function holdLoop() {
+  let dx = 0, dy = 0;
+  if (keysHeld.up) dy -= holdSpeed;
+  if (keysHeld.down) dy += holdSpeed;
+  if (keysHeld.left) dx -= holdSpeed;
+  if (keysHeld.right) dx += holdSpeed;
+
+  if (dx !== 0 || dy !== 0) {
+    gridWrapEl.scrollBy({ left: dx, top: dy });
+  }
+  requestAnimationFrame(holdLoop);
+}
+requestAnimationFrame(holdLoop);
 </script>
 
 </body>

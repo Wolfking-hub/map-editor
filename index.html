@@ -423,6 +423,7 @@
     background: #fafafa;
     cursor: pointer;
     user-select: none;
+    text-align: center;
   }
   .arrow-tool.active { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
   .arrow-tool.arrow-red { border-left: 4px solid #e53935; }
@@ -650,18 +651,20 @@
       <div class="layer-btn" data-layer="arrow">箭头层</div>
     </div>
 
+    <div class="layer-switch">
+      <div class="arrow-tool eraser-tool" id="leftEraserBtn" data-type="eraser">橡皮擦</div>
+    </div>
+
     <p class="hint" id="hint">
       · 图标层：点格子放置图标<br>
-      · 橡皮擦在右侧工具栏
+      · 橡皮擦在右侧工具栏<br>
+      · 可以直接鼠标右键使用橡皮擦~
     </p>
   </div>
 
   <div class="icon-col" id="groundTools">
     <h2>图标</h2>
     <div class="icon-groups" id="iconGroups"></div>
-    <div class="arrow-tools" style="margin-top: 10px;">
-      <div class="arrow-tool eraser-tool" data-type="eraser">橡皮擦</div>
-    </div>
   </div>
 
   <div class="icon-col" id="arrowTools" style="display:none;">
@@ -671,9 +674,6 @@
       <div class="arrow-tool arrow-blue" data-type="arrow-blue">蓝箭头</div>
       <div class="arrow-tool arrow-green" data-type="arrow-green">绿箭头</div>
       <div class="arrow-tool arrow-yellow" data-type="arrow-yellow">黄箭头</div>
-    </div>
-    <div class="arrow-tools" style="margin-top: 10px;">
-      <div class="arrow-tool eraser-tool" data-type="eraser">橡皮擦</div>
     </div>
   </div>
 </div>
@@ -836,11 +836,36 @@ function renderGrid() {
         cell.classList.add('arrow-start');
       }
       cell.onclick = () => handleCellClick(r, c);
+      cell.oncontextmenu = (e) => {
+        e.preventDefault();
+        flashEraser();
+        clearCell(r, c);
+      };
       renderCellContent(cell, gridData[r][c]);
       gridEl.appendChild(cell);
     }
   }
   renderArrows(gridEl);
+}
+
+function clearCell(r, c) {
+  gridData[r][c].ground = 'empty';
+  gridData[r][c].base = null;
+  gridData[r][c].arrows = [];
+  delete groundOverflow[`${r},${c}`];
+  pushHistory();
+  renderGrid();
+}
+
+/* 右键时橡皮擦按钮闪一下 */
+function flashEraser() {
+  const btn = document.getElementById('leftEraserBtn');
+  btn.classList.add('active');
+  setTimeout(() => {
+    if (currentTool !== 'eraser') {
+      btn.classList.remove('active');
+    }
+  }, 180);
 }
 
 function renderCellContent(cellEl, data) {
@@ -885,7 +910,6 @@ function renderArrows(gridEl) {
   };
   const { lineWidth, headLen, headWidth } = ARROW_STYLE;
 
-  // 编辑器预览也跟随「箭头半透明」开关
   const arrowAlpha = document.getElementById('exportArrowAlpha').checked ? 0.85 : 1;
 
   for (let r = 0; r < rows; r++) {
@@ -937,12 +961,7 @@ function renderArrows(gridEl) {
 
 function handleCellClick(r, c) {
   if (currentTool === 'eraser') {
-    gridData[r][c].ground = 'empty';
-    gridData[r][c].base = null;
-    gridData[r][c].arrows = [];
-    delete groundOverflow[`${r},${c}`];
-    pushHistory();
-    renderGrid();
+    clearCell(r, c);
     return;
   }
 
@@ -1257,7 +1276,6 @@ document.addEventListener('click', () => {
   document.getElementById('exportMenu').classList.remove('show');
 });
 
-/* 箭头半透明开关：高亮 + 立刻重绘编辑器预览 */
 document.getElementById('exportArrowAlpha').addEventListener('change', function() {
   document.getElementById('exportAlphaToggle').classList.toggle('active', this.checked);
   renderGrid();
@@ -1285,16 +1303,16 @@ document.querySelectorAll('.layer-btn').forEach(el => {
       document.getElementById('arrowTools').style.display = 'none';
       modeSwitch.classList.remove('disabled');
       baseSetting.classList.remove('disabled');
-      setTool('eraser');
-      document.getElementById('hint').innerHTML = '· 图标层：点格子放置图标<br>· 橡皮擦在右侧工具栏';
+      setTool('safeguard');   // 默认保障点
+      document.getElementById('hint').innerHTML = '· 图标层：点格子放置图标<br>· 橡皮擦在右侧工具栏<br>· 可以直接鼠标右键使用橡皮擦~';
       replayFade(document.getElementById('groundTools'));
     } else {
       document.getElementById('groundTools').style.display = 'none';
       document.getElementById('arrowTools').style.display = 'block';
       modeSwitch.classList.add('disabled');
       baseSetting.classList.add('disabled');
-      setTool('eraser');
-      document.getElementById('hint').innerHTML = '· 箭头层：先点起点，再点终点<br>· 橡皮擦在右侧工具栏';
+      setTool('arrow-red');   // 默认红箭头
+      document.getElementById('hint').innerHTML = '· 箭头层：先点起点，再点终点<br>· 橡皮擦在右侧工具栏<br>· 可以直接鼠标右键使用橡皮擦~';
       replayFade(document.getElementById('arrowTools'));
     }
     renderGrid();
@@ -1306,9 +1324,8 @@ document.querySelectorAll('.mode-btn').forEach(el => {
     document.querySelectorAll('.mode-btn').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
     currentMode = el.dataset.mode;
-    currentTool = 'eraser';
+    setTool('safeguard');   // 切 PVE/PVP 时默认也回到保障点
     renderIconGroups();
-    setTool('eraser');
     renderGrid();
     replayFade(document.getElementById('groundTools'));
   };
@@ -1352,6 +1369,17 @@ baseLevel.addEventListener('input', () => {
   updateBasePreview();
   document.getElementById('baseEnable').checked = true;
 });
+
+baseLevel.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  let v = +baseLevel.value || 0;
+  const step = e.deltaY < 0 ? 1 : -1;
+  v = Math.max(0, Math.min(100, v + step));
+  baseLevel.value = v;
+  baseLevelNum.value = v;
+  updateBasePreview();
+  document.getElementById('baseEnable').checked = true;
+}, { passive: false });
 
 baseLevelNum.addEventListener('input', () => {
   let v = +baseLevelNum.value;
@@ -1480,9 +1508,8 @@ initTickBar('rowsTick', 'rowsInput', 35, 'rowsHint', 1);
 
 initGrid(12, 12);
 renderIconGroups();
-setTool('eraser');
+setTool('safeguard');   // 启动默认保障点
 
-// 启动时让「地图格子」的状态生效（PVE/PVP 和底板设置亮起）
 document.getElementById('modeSwitch').classList.remove('disabled');
 document.getElementById('baseSetting').classList.remove('disabled');
 </script>

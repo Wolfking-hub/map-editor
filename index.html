@@ -1350,6 +1350,7 @@ function updateBasePreview() {
 baseLevel.addEventListener('input', () => {
   baseLevelNum.value = baseLevel.value;
   updateBasePreview();
+  document.getElementById('baseEnable').checked = true;
 });
 
 baseLevelNum.addEventListener('input', () => {
@@ -1360,6 +1361,7 @@ baseLevelNum.addEventListener('input', () => {
   baseLevelNum.value = v;
   baseLevel.value = v;
   updateBasePreview();
+  document.getElementById('baseEnable').checked = true;
 });
 
 baseLevelNum.addEventListener('wheel', (e) => {
@@ -1376,6 +1378,7 @@ baseLevelNum.addEventListener('wheel', (e) => {
   baseLevelNum.value = v;
   baseLevel.value = v;
   updateBasePreview();
+  document.getElementById('baseEnable').checked = true;
 }, { passive: false });
 
 updateBasePreview();
@@ -1478,6 +1481,10 @@ initTickBar('rowsTick', 'rowsInput', 35, 'rowsHint', 1);
 initGrid(12, 12);
 renderIconGroups();
 setTool('eraser');
+
+// 启动时让「地图格子」的状态生效（PVE/PVP 和底板设置亮起）
+document.getElementById('modeSwitch').classList.remove('disabled');
+document.getElementById('baseSetting').classList.remove('disabled');
 </script>
 
 </body>

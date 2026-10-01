@@ -757,7 +757,7 @@ const ARROW_STYLE = { lineWidth: 8, headLen: 24, headWidth: 20 };
 
 let cols = 12, rows = 12;
 let gridData = [];
-let groundOverflow = {};
+let groundOverflow = {};   // { "r,c": { ground, base } }
 
 let currentLayer = 'ground';
 let currentMode = 'pve';
@@ -839,7 +839,7 @@ function renderGrid() {
       cell.oncontextmenu = (e) => {
         e.preventDefault();
         flashEraser();
-        clearCell(r, c);
+        eraserAt(r, c);
       };
       renderCellContent(cell, gridData[r][c]);
       gridEl.appendChild(cell);
@@ -848,7 +848,26 @@ function renderGrid() {
   renderArrows(gridEl);
 }
 
-function clearCell(r, c) {
+/* ===== 橡皮擦：两段式 ===== */
+function eraserAt(r, c) {
+  // 第 1 段：删「以该格为终点」的箭头
+  let removedAny = false;
+  for (let rr = 0; rr < rows; rr++) {
+    for (let cc = 0; cc < cols; cc++) {
+      const before = gridData[rr][cc].arrows.length;
+      gridData[rr][cc].arrows = gridData[rr][cc].arrows.filter(a => !(a.toR === r && a.toC === c));
+      if (gridData[rr][cc].arrows.length !== before) {
+        removedAny = true;
+      }
+    }
+  }
+  if (removedAny) {
+    pushHistory();
+    renderGrid();
+    return;
+  }
+
+  // 第 2 段：清空该格（图标 + 底板 + 以该格为起点的箭头）
   gridData[r][c].ground = 'empty';
   gridData[r][c].base = null;
   gridData[r][c].arrows = [];
@@ -960,7 +979,7 @@ function renderArrows(gridEl) {
 
 function handleCellClick(r, c) {
   if (currentTool === 'eraser') {
-    clearCell(r, c);
+    eraserAt(r, c);
     return;
   }
 
@@ -978,14 +997,17 @@ function handleCellClick(r, c) {
 
   if (currentTool.startsWith('arrow-')) return;
 
-  // 图标层：单格只能有一个图标，如果是同一个图标，直接忽略
   if (gridData[r][c].ground === currentTool) return;
 
   gridData[r][c].ground = currentTool;
-  groundOverflow[`${r},${c}`] = currentTool;
+  groundOverflow[`${r},${c}`] = {
+    ground: currentTool,
+    base: gridData[r][c].base
+  };
 
   if (document.getElementById('baseEnable').checked) {
     gridData[r][c].base = +document.getElementById('baseLevel').value;
+    groundOverflow[`${r},${c}`].base = gridData[r][c].base;
   }
 
   pushHistory(); renderGrid();
@@ -1029,10 +1051,14 @@ function resizeGrid() {
     alert('长和宽的范围都是 1–35'); return;
   }
 
+  // 把当前显示的图标 + 底板存进 overflow
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const g = gridData[r][c].ground;
-      if (g && g !== 'empty') groundOverflow[`${r},${c}`] = g;
+      const b = gridData[r][c].base;
+      if ((g && g !== 'empty') || (b !== null && b !== undefined)) {
+        groundOverflow[`${r},${c}`] = { ground: g, base: b };
+      }
     }
   }
 
@@ -1040,21 +1066,20 @@ function resizeGrid() {
   for (let r = 0; r < newRows; r++) {
     const row = [];
     for (let c = 0; c < newCols; c++) {
+      const key = `${r},${c}`;
       let ground = 'empty';
       let base = null;
-      let arrows = [];
 
-      const key = `${r},${c}`;
       if (groundOverflow[key]) {
-        ground = groundOverflow[key];
+        ground = groundOverflow[key].ground || 'empty';
+        base = (groundOverflow[key].base !== undefined) ? groundOverflow[key].base : null;
       } else if (r < rows && c < cols) {
         ground = gridData[r][c].ground;
-      }
-
-      if (r < rows && c < cols) {
         base = gridData[r][c].base;
       }
 
+      // 箭头正常裁剪
+      let arrows = [];
       if (r < rows && c < cols) {
         arrows = gridData[r][c].arrows
           .filter(a => a.toR < newRows && a.toC < newCols)
@@ -1109,6 +1134,13 @@ function importJSON(e) {
       if (!data.cols || !data.rows || !data.cells) throw new Error('格式不对');
       cols = data.cols; rows = data.rows; gridData = data.cells;
       groundOverflow = data.groundOverflow || {};
+      // 兼容旧格式（旧 groundOverflow 是 "r,c": "iconId"）
+      Object.keys(groundOverflow).forEach(k => {
+        const v = groundOverflow[k];
+        if (typeof v === 'string') {
+          groundOverflow[k] = { ground: v, base: null };
+        }
+      });
       const dirVec = {
         right: [0, 1], left: [0, -1], up: [-1, 0], down: [1, 0],
         'up-right': [-1, 1], 'up-left': [-1, -1],

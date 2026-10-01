@@ -857,7 +857,6 @@ function clearCell(r, c) {
   renderGrid();
 }
 
-/* 右键时橡皮擦按钮闪一下 */
 function flashEraser() {
   const btn = document.getElementById('leftEraserBtn');
   btn.classList.add('active');
@@ -978,6 +977,10 @@ function handleCellClick(r, c) {
   }
 
   if (currentTool.startsWith('arrow-')) return;
+
+  // 图标层：单格只能有一个图标，如果是同一个图标，直接忽略
+  if (gridData[r][c].ground === currentTool) return;
+
   gridData[r][c].ground = currentTool;
   groundOverflow[`${r},${c}`] = currentTool;
 
@@ -1144,8 +1147,12 @@ async function exportPNG(mode) {
   const arrowAlpha = document.getElementById('exportArrowAlpha').checked ? 0.85 : 1;
 
   const step = CELL_SIZE + GAP;
-  const totalW = cols * CELL_SIZE + (cols - 1) * GAP;
-  const totalH = rows * CELL_SIZE + (rows - 1) * GAP;
+  const totalW = withGap
+    ? cols * CELL_SIZE + (cols - 1) * GAP
+    : cols * CELL_SIZE;
+  const totalH = withGap
+    ? rows * CELL_SIZE + (rows - 1) * GAP
+    : rows * CELL_SIZE;
 
   const usedIcons = new Set();
   for (let r = 0; r < rows; r++)
@@ -1303,7 +1310,7 @@ document.querySelectorAll('.layer-btn').forEach(el => {
       document.getElementById('arrowTools').style.display = 'none';
       modeSwitch.classList.remove('disabled');
       baseSetting.classList.remove('disabled');
-      setTool('safeguard');   // 默认保障点
+      setTool('safeguard');
       document.getElementById('hint').innerHTML = '· 图标层：点格子放置图标<br>· 橡皮擦在右侧工具栏<br>· 可以直接鼠标右键使用橡皮擦~';
       replayFade(document.getElementById('groundTools'));
     } else {
@@ -1311,7 +1318,7 @@ document.querySelectorAll('.layer-btn').forEach(el => {
       document.getElementById('arrowTools').style.display = 'block';
       modeSwitch.classList.add('disabled');
       baseSetting.classList.add('disabled');
-      setTool('arrow-red');   // 默认红箭头
+      setTool('arrow-red');
       document.getElementById('hint').innerHTML = '· 箭头层：先点起点，再点终点<br>· 橡皮擦在右侧工具栏<br>· 可以直接鼠标右键使用橡皮擦~';
       replayFade(document.getElementById('arrowTools'));
     }
@@ -1324,7 +1331,7 @@ document.querySelectorAll('.mode-btn').forEach(el => {
     document.querySelectorAll('.mode-btn').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
     currentMode = el.dataset.mode;
-    setTool('safeguard');   // 切 PVE/PVP 时默认也回到保障点
+    setTool('safeguard');
     renderIconGroups();
     renderGrid();
     replayFade(document.getElementById('groundTools'));
@@ -1508,7 +1515,7 @@ initTickBar('rowsTick', 'rowsInput', 35, 'rowsHint', 1);
 
 initGrid(12, 12);
 renderIconGroups();
-setTool('safeguard');   // 启动默认保障点
+setTool('safeguard');
 
 document.getElementById('modeSwitch').classList.remove('disabled');
 document.getElementById('baseSetting').classList.remove('disabled');

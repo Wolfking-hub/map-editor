@@ -238,6 +238,32 @@
   }
   .cell.arrow-start { outline: 2px solid #1a73e8; outline-offset: -2px; }
 
+  /* ===== 框选 / 整体拖动 ===== */
+  .cell.selected::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(26, 115, 232, 0.16);
+    border: 1px solid rgba(26, 115, 232, 0.55);
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 5;
+  }
+  /* 拖动整体时，抓在选区上给个抓手光标 */
+  .grid.can-drag .cell.selected { cursor: grab; }
+  .grid.dragging .cell.selected { cursor: grabbing; }
+  .grid.dragging { opacity: 0.85; }
+
+  /* 拉框虚框：覆盖在网格上 */
+  .marquee {
+    position: absolute;
+    border: 1px dashed #1a73e8;
+    background: rgba(26, 115, 232, 0.10);
+    pointer-events: none;
+    z-index: 6;
+    box-sizing: border-box;
+  }
+
   .arrow-svg {
     position: absolute;
     top: 0;
@@ -259,7 +285,10 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    width: 200px;
     min-width: 200px;
+    flex: 0 0 200px;
+    box-sizing: border-box;
   }
   .layer-col h2 { font-size: 13px; margin: 0 0 2px 0; color: #555; }
 
@@ -470,6 +499,10 @@
     color: #999;
     margin: 8px 0 0 0;
     line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-width: 100%;
   }
 
   /* 次级小按钮：清除自动保存，低调不抢主操作 */
@@ -721,7 +754,9 @@
 
     <p class="hint" id="hint">
       · 图标层：点格子放置图标<br>
-      · 可以直接鼠标右键使用橡皮擦~
+      · 可以直接鼠标右键使用橡皮擦~<br>
+      · Ctrl + 拖动 = 框选，拖选中区域可整体移动<br>
+      · 右键单击选中区域 = 解散
     </p>
 
     <button class="save-btn" id="clearSaveBtn" onclick="onClearSaveClick()" title="清除浏览器里的自动保存（仅影响本机，不影响当前编辑的地图）">清除自动保存</button>
@@ -844,6 +879,14 @@ let arrowStart = null;
    开着时点击格子=擦除；关掉后立刻恢复成你原先选中的工具，不改变任何其他状态。 */
 let eraserOn = false;
 
+/* ===== 框选 / 整体拖动 =====
+   Ctrl+拖动 = 拉框选中；松开鼠标即完成。
+   完成后在选区内拖动可整体移动（剪切），右键单击选区内解散。 */
+let selection = null;        // { r1, c1, r2, c2 } 已归一化（r1<=r2, c1<=c2）
+let marquee = null;          // { r1, c1, r2, c2 } 正在拉框中
+let dragState = null;        // { startR, startC, lastR, lastC, moved, snapshot }
+let suppressClick = false;   // 拖完/框选完抑制一次 click，避免误触画图
+
 const CELL_SIZE = 48;
 const GAP = 1;
 
@@ -960,6 +1003,7 @@ function renderGrid() {
     }
   }
   renderArrows(gridEl);
+  paintSelection();
 }
 
 /* 构建单个格子元素（全量渲染与单格增量渲染共用） */
@@ -970,6 +1014,9 @@ function buildCell(r, c) {
   cell.dataset.c = c;
   if (arrowStart && arrowStart.r === r && arrowStart.c === c) {
     cell.classList.add('arrow-start');
+  }
+  if (inRect(selection, r, c)) {
+    cell.classList.add('selected');
   }
   cell.onclick = () => handleCellClick(r, c);
   cell.oncontextmenu = (e) => {
@@ -993,6 +1040,263 @@ function updateCell(r, c) {
 /* 重绘格子 + 箭头层（改箭头时才需要） */
 function repaintAll() {
   renderGrid();
+}
+
+/* ===== 框选 / 整体拖动 ===== */
+function normRect(r1, c1, r2, c2) {
+  return { r1: Math.min(r1,r2), c1: Math.min(c1,c2), r2: Math.max(r1,r2), c2: Math.max(c1,c2) };
+}
+function inRect(rect, r, c) {
+  return rect && r >= rect.r1 && r <= rect.r2 && c >= rect.c1 && c <= rect.c2;
+}
+function rectSize(rect) {
+  return { h: rect.r2 - rect.r1 + 1, w: rect.c2 - rect.c1 + 1 };
+}
+function selectionHasContent(rect) {
+  for (let r = rect.r1; r <= rect.r2; r++)
+    for (let c = rect.c1; c <= rect.c2; c++) {
+      const cl = gridData[r][c];
+      if ((cl.ground && cl.ground !== 'empty') || cl.base !== null || (cl.arrows && cl.arrows.length))
+        return true;
+    }
+  return false;
+}
+
+/* 重画箭头层（先清掉旧的，避免叠加） */
+function repaintArrows() {
+  const gridEl = document.getElementById('grid');
+  if (!gridEl) return;
+  const old = gridEl.querySelector('.arrow-svg');
+  if (old) old.remove();
+  renderArrows(gridEl);
+}
+
+/* 把选中态刷到格子上（只改 class，避免整图重建） */
+function paintSelection() {
+  const gridEl = document.getElementById('grid');
+  if (!gridEl) return;
+  gridEl.querySelectorAll('.cell').forEach(el => {
+    const r = +el.dataset.r, c = +el.dataset.c;
+    el.classList.toggle('selected', inRect(selection, r, c));
+  });
+  gridEl.classList.toggle('can-drag', !!selection);
+}
+
+function clearSelection() {
+  selection = null;
+  marquee = null;
+  dragState = null;
+  paintSelection();
+}
+
+function updateMarqueeEl() {
+  const gridEl = document.getElementById('grid');
+  if (!gridEl) return;
+  let el = gridEl.querySelector('.marquee');
+  if (!marquee) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.className = 'marquee'; gridEl.appendChild(el); }
+  const step = CELL_SIZE + GAP;
+  const rect = normRect(marquee.r1, marquee.c1, marquee.r2, marquee.c2);
+  el.style.left = (rect.c1 * step) + 'px';
+  el.style.top = (rect.r1 * step) + 'px';
+  el.style.width = ((rect.c2 - rect.c1 + 1) * CELL_SIZE + (rect.c2 - rect.c1) * GAP) + 'px';
+  el.style.height = ((rect.r2 - rect.r1 + 1) * CELL_SIZE + (rect.r2 - rect.r1) * GAP) + 'px';
+}
+
+/* 从像素坐标反推格坐标 */
+function pointToCell(clientX, clientY) {
+  const gridEl = document.getElementById('grid');
+  const rect = gridEl.getBoundingClientRect();
+  const step = CELL_SIZE + GAP;
+  const c = Math.floor((clientX - rect.left) / step);
+  const r = Math.floor((clientY - rect.top) / step);
+  return {
+    r: Math.max(0, Math.min(rows - 1, r)),
+    c: Math.max(0, Math.min(cols - 1, c))
+  };
+}
+
+/* 只重绘两个矩形范围（拖动时用，避免全图重建） */
+function repaintRegion(rect) {
+  for (let r = rect.r1; r <= rect.r2; r++) {
+    for (let c = rect.c1; c <= rect.c2; c++) {
+      if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
+      updateCell(r, c);
+    }
+  }
+}
+
+/* 移动选中区域：剪切 + 整体平移；越界的箭头删除 */
+function moveSelection(dr, dc) {
+  const { h, w } = rectSize(selection);
+  const nr1 = selection.r1 + dr;
+  const nc1 = selection.c1 + dc;
+  const oldRect = { r1: selection.r1, c1: selection.c1, r2: selection.r2, c2: selection.c2 };
+
+  // 目标区域所有格子（先取出快照）
+  const snapshot = [];
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      const src = gridData[selection.r1 + r][selection.c1 + c];
+      snapshot.push({
+        r, c,
+        ground: src.ground,
+        base: src.base,
+        arrows: (src.arrows || []).map(a => ({ color: a.color, toR: a.toR + dr, toC: a.toC + dc }))
+      });
+    }
+  }
+
+  // 1. 清空原区域
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      const rr = selection.r1 + r, cc = selection.c1 + c;
+      gridData[rr][cc] = { ground: 'empty', base: null, arrows: [] };
+      delete groundOverflow[cellKey(rr, cc)];
+    }
+  }
+
+  // 2. 写入新位置；终点越界的箭头丢弃
+  for (const item of snapshot) {
+    const rr = nr1 + item.r, cc = nc1 + item.c;
+    if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
+    const kept = item.arrows.filter(a =>
+      a.toR >= 0 && a.toR < rows && a.toC >= 0 && a.toC < cols
+    );
+    gridData[rr][cc] = { ground: item.ground, base: item.base, arrows: kept };
+    if (item.ground !== 'empty' || item.base !== null) {
+      groundOverflow[cellKey(rr, cc)] = { ground: item.ground, base: item.base };
+    }
+  }
+
+  // 3. 选区跟着走
+  selection = normRect(nr1, nc1, nr1 + h - 1, nc1 + w - 1);
+  rebuildArrowIndex();
+}
+
+/* 整个地图上绑定的鼠标逻辑（框选 / 拖动） */
+function initSelectionDrag() {
+  const gridEl = document.getElementById('grid');
+
+  gridEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+
+    // --- Ctrl + 左键：开始拉框 ---
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const p = pointToCell(e.clientX, e.clientY);
+      marquee = { r1: p.r, c1: p.c, r2: p.r, c2: p.c };
+      updateMarqueeEl();
+      return;
+    }
+
+    // --- 已有选区且点在选区内：开始整体拖动 ---
+    if (selection) {
+      const p = pointToCell(e.clientX, e.clientY);
+      if (inRect(selection, p.r, p.c)) {
+        e.preventDefault();
+        dragState = {
+          startR: p.r, startC: p.c,
+          lastR: p.r, lastC: p.c,
+          moved: false
+        };
+        gridEl.classList.add('dragging');
+      }
+    }
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    // 拉框中
+    if (marquee) {
+      const p = pointToCell(e.clientX, e.clientY);
+      marquee.r2 = p.r; marquee.c2 = p.c;
+      updateMarqueeEl();
+      return;
+    }
+    // 拖动整体中
+    if (dragState) {
+      const p = pointToCell(e.clientX, e.clientY);
+      let dr = p.r - dragState.lastR;
+      let dc = p.c - dragState.lastC;
+      if (dr === 0 && dc === 0) return;
+
+      // 边界卡住：整块能放下才移动
+      const { h, w } = rectSize(selection);
+      if (selection.r1 + dr < 0 || selection.r1 + dr + h - 1 > rows - 1) { dr = 0; }
+      if (selection.c1 + dc < 0 || selection.c1 + dc + w - 1 > cols - 1) { dc = 0; }
+      if (dr === 0 && dc === 0) return;
+
+      const oldRect = { r1: selection.r1, c1: selection.c1, r2: selection.r2, c2: selection.c2 };
+      moveSelection(dr, dc);
+      dragState.lastR = p.r;
+      dragState.lastC = p.c;
+      dragState.moved = true;
+
+      // 只重绘"原位置 + 新位置"两片，避免大图全量重建
+      repaintRegion(oldRect);
+      repaintRegion(selection);
+      paintSelection();
+      repaintArrows();       // 箭头可能跨格子，整体重画
+    }
+  });
+
+  window.addEventListener('mouseup', (e) => {
+    if (e.button !== 0) return;
+
+    // 结束拉框
+    if (marquee) {
+      const rect = normRect(marquee.r1, marquee.c1, marquee.r2, marquee.c2);
+      marquee = null;
+      updateMarqueeEl();
+      const { h, w } = rectSize(rect);
+      // 只点了一下、没拖动 -> 视为取消选择
+      if (h === 1 && w === 1) {
+        clearSelection();
+      } else {
+        selection = rect;
+        paintSelection();
+      }
+      suppressClick = true;         // 别让这次操作触发画图
+      return;
+    }
+
+    // 结束整体拖动
+    if (dragState) {
+      const wasMoved = dragState.moved;
+      dragState = null;
+      gridEl.classList.remove('dragging');
+      if (wasMoved) {
+        pushHistory();
+        suppressClick = true;
+      }
+    }
+  });
+
+  // 左键单击不再解散；只负责吃掉"拖完那一下"的误触
+  gridEl.addEventListener('click', (e) => {
+    if (suppressClick) { suppressClick = false; e.stopPropagation(); e.preventDefault(); }
+  }, true);
+
+  // 右键单击选区内 = 解散；其余情况仍走原来的右键擦除
+  gridEl.addEventListener('contextmenu', (e) => {
+    // 框选/拖动过程中：屏蔽
+    if (marquee || dragState) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    // 有选区且点在选区内：解散，不擦除
+    if (selection) {
+      const p = pointToCell(e.clientX, e.clientY);
+      if (inRect(selection, p.r, p.c)) {
+        e.preventDefault();
+        e.stopPropagation();
+        clearSelection();
+        showToast('已取消选择');
+        return;
+      }
+    }
+  }, true);
 }
 
 /* ===== 橡皮擦：两段式 ===== */
@@ -1393,6 +1697,7 @@ function undo() {
     gridData = s.gridData;
     groundOverflow = s.groundOverflow;
     arrowStart = null;
+    clearSelection();
     rebuildArrowIndex();
     renderGrid();
   }
@@ -1404,6 +1709,7 @@ function redo() {
     gridData = s.gridData;
     groundOverflow = s.groundOverflow;
     arrowStart = null;
+    clearSelection();
     rebuildArrowIndex();
     renderGrid();
   }
@@ -1791,7 +2097,7 @@ document.querySelectorAll('.layer-btn').forEach(el => {
       modeSwitch.classList.remove('disabled');
       baseSetting.classList.remove('disabled');
       setTool('safeguard');
-      document.getElementById('hint').innerHTML = '· 图标层：点格子放置图标<br>· 可以直接鼠标右键使用橡皮擦~';
+      document.getElementById('hint').innerHTML = '· 图标层：点格子放置图标<br>· 可以直接鼠标右键使用橡皮擦~<br>· Ctrl + 拖动 = 框选，拖选中区域可整体移动<br>· 右键单击选中区域 = 解散';
       replayFade(document.getElementById('groundTools'));
     } else {
       document.getElementById('groundTools').style.display = 'none';
@@ -2025,6 +2331,9 @@ if (restored) {
 
 document.getElementById('modeSwitch').classList.remove('disabled');
 document.getElementById('baseSetting').classList.remove('disabled');
+
+/* 框选 / 整体拖动 */
+initSelectionDrag();
 
 /* ===== WASD / 方向键 / 小键盘 滚动地图区 ===== */
 let isHoveringMap = false;

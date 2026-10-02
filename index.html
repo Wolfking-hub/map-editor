@@ -201,7 +201,7 @@
   .grid {
     display: grid;
     gap: 1px;
-    background: #ddd;
+    background: transparent;   /* 白底与格线改由 .baseline-svg 绘制，避免盖住斜带 */
     border: 1px solid #ccc;
     user-select: none;
     position: relative;
@@ -212,13 +212,13 @@
   .cell {
     width: 48px;
     height: 48px;
-    background: #fff;
+    background: transparent;   /* 透明，让底下的斜带层透出来 */
     position: relative;
     cursor: pointer;
     overflow: visible;
     transition: background 0.12s ease;
   }
-  .cell:hover { background: #f0f7ff; }
+  .cell:hover { background: rgba(240, 247, 255, 0.85); }
   .cell:active { transform: scale(0.96); }
 
   .cell .base-block {
@@ -237,6 +237,9 @@
     z-index: 1;
   }
   .cell.arrow-start { outline: 2px solid #1a73e8; outline-offset: -2px; }
+
+  /* Alt 连线：起点高亮（与箭头起点同样的蓝框，用虚线区分） */
+  .cell.alt-start { outline: 2px dashed #7b1fa2; outline-offset: -2px; }
 
   /* ===== 框选 / 整体拖动 ===== */
   .cell.selected::after {
@@ -270,6 +273,36 @@
     left: 0;
     pointer-events: none;
     z-index: 2;
+  }
+
+  /* 斜带底板层：垫在所有格子下方，自带白底（这样不会盖住格线） */
+  .baseline-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* 浮动中点格层：在斜带之上、格子图标之下。
+     整层不接收鼠标事件，只有浮动格本身接收（否则会挡住底下的网格）。 */
+  .midcell-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    pointer-events: none;
+  }
+  /* 浮动格：平时不可见，鼠标移上去才像普通格子一样高亮 */
+  .midcell-svg .mid-cell {
+    pointer-events: none;
+  }
+  .midcell-svg .mid-cell rect.mid-hit {
+    fill: transparent;
+    pointer-events: auto;      /* 只有这一小块接收鼠标 */
+  }
+  .midcell-svg .mid-cell:hover rect.mid-hit {
+    fill: rgba(240, 247, 255, 0.85);
   }
 
   .bottom-panel {
@@ -753,10 +786,11 @@
     </div>
 
     <p class="hint" id="hint">
-      · 图标层：点格子放置图标<br>
-      · 可以直接鼠标右键使用橡皮擦~<br>
-      · Ctrl + 拖动 = 框选，拖选中区域可整体移动<br>
-      · 右键单击选中区域 = 解散
+      · 左键点格子放置图标或箭头<br>
+      · 直接右键使用橡皮擦~<br>
+      · Ctrl+拖动/Ctrl+单击可选中<br>
+      · 长按一个格子可直接拖动它<br>
+      · Alt+单击两个格子 = 铺一条底板线
     </p>
 
     <button class="save-btn" id="clearSaveBtn" onclick="onClearSaveClick()" title="清除浏览器里的自动保存（仅影响本机，不影响当前编辑的地图）">清除自动保存</button>
@@ -882,13 +916,29 @@ let eraserOn = false;
 /* ===== 框选 / 整体拖动 =====
    Ctrl+拖动 = 拉框选中；松开鼠标即完成。
    完成后在选区内拖动可整体移动（剪切），右键单击选区内解散。 */
-let selection = null;        // { r1, c1, r2, c2 } 已归一化（r1<=r2, c1<=c2）
-let marquee = null;          // { r1, c1, r2, c2 } 正在拉框中
-let dragState = null;        // { startR, startC, lastR, lastC, moved, snapshot }
+let selection = null;        // Set("r,c") 已选中的格子；null / 空集 = 无选区
+let marquee = null;          // { r1, c1, r2, c2, additive } 正在拉框
+let dragState = null;        // { mode, lastR, lastC, moved }
 let suppressClick = false;   // 拖完/框选完抑制一次 click，避免误触画图
+let savedSelectionForSingle = null;   // 单格拖动前暂存的选区
+
+/* Alt 连线铺底板：按住 Alt 点两个格子，在它们之间铺一条底板线 */
+let altStart = null;         // { r, c } 记下的第一个点
+
+/* ===== 斜带底板 =====
+   与逐格底板(base)不同，斜带是一条真正的矢量粗线：平滑斜边，不是阶梯。
+   只存线段本身（起点/终点格 + 深浅），其他一切（覆盖范围）都实时推导。 */
+let baseLines = [];          // [ { r1, c1, r2, c2, value } ]
+
+/* 浮动中点格里的内容：键是斜带在 baseLines 中的下标，值是 { ground, base }。
+   浮动格的位置由斜带决定，所以只存内容，不存坐标。 */
+let midCells = {};           // { lineIndex: { ground, base } }
 
 const CELL_SIZE = 48;
 const GAP = 1;
+
+/* 斜带宽度 = 1 格 */
+const BASE_LINE_WIDTH = 48;
 
 /* ===== 历史记录：环形缓冲，避免大图长时间编辑时内存无限膨胀 ===== */
 const HISTORY_LIMIT = 60;
@@ -940,7 +990,7 @@ function initGrid(c, r) {
   groundOverflow = {};
   arrowStart = null;
   rebuildArrowIndex();
-  history = [JSON.stringify({ gridData, groundOverflow })];
+  history = [JSON.stringify({ gridData, groundOverflow, baseLines, midCells })];
   historyIndex = 0;
   renderGrid();
 }
@@ -995,6 +1045,10 @@ function renderGrid() {
 
   const oldSvg = gridEl.querySelector('.arrow-svg');
   if (oldSvg) oldSvg.remove();
+  const oldBase = gridEl.querySelector('.baseline-svg');
+  if (oldBase) oldBase.remove();
+  const oldMid = gridEl.querySelector('.midcell-svg');
+  if (oldMid) oldMid.remove();
   gridEl.querySelectorAll('.cell').forEach(el => el.remove());
 
   for (let r = 0; r < rows; r++) {
@@ -1002,6 +1056,9 @@ function renderGrid() {
       gridEl.appendChild(buildCell(r, c));
     }
   }
+  // 斜带层垫在最底下（先于箭头层生成，但要插到第一个格子之前）
+  ensureBaseLineLayer();
+  ensureMidCellLayer();
   renderArrows(gridEl);
   paintSelection();
 }
@@ -1015,8 +1072,11 @@ function buildCell(r, c) {
   if (arrowStart && arrowStart.r === r && arrowStart.c === c) {
     cell.classList.add('arrow-start');
   }
-  if (inRect(selection, r, c)) {
+  if (selHas(r, c)) {
     cell.classList.add('selected');
+  }
+  if (altStart && altStart.r === r && altStart.c === c) {
+    cell.classList.add('alt-start');
   }
   cell.onclick = () => handleCellClick(r, c);
   cell.oncontextmenu = (e) => {
@@ -1034,6 +1094,7 @@ function updateCell(r, c) {
   const cell = gridEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
   if (!cell) return;
   cell.classList.toggle('arrow-start', !!arrowStart && arrowStart.r === r && arrowStart.c === c);
+  cell.classList.toggle('alt-start', !!altStart && altStart.r === r && altStart.c === c);
   renderCellContent(cell, gridData[r][c]);
 }
 
@@ -1042,7 +1103,50 @@ function repaintAll() {
   renderGrid();
 }
 
-/* ===== 框选 / 整体拖动 ===== */
+/* ===== 框选 / 整体拖动 =====
+   选区是一组格子（不是矩形），这样才能拖不规则的形状。
+   selection = Set("r,c")，空集合视为没有选区。 */
+
+function selKey(r, c) { return r + ',' + c; }
+function parseKey(k) { const p = k.split(','); return { r: +p[0], c: +p[1] }; }
+
+function selHas(r, c) { return selection && selection.has(selKey(r, c)); }
+function selAdd(r, c) {
+  if (!selection) selection = new Set();
+  selection.add(selKey(r, c));
+}
+function selRemove(r, c) {
+  if (!selection) return;
+  selection.delete(selKey(r, c));
+  if (selection.size === 0) selection = null;
+}
+function selEmpty() { return !selection || selection.size === 0; }
+
+/* 选区的最小外接矩形，用于边界判断与区域重绘 */
+function selBounds(sel) {
+  sel = sel || selection;
+  if (selEmpty.call(null) && !sel) return null;
+  if (!sel || sel.size === 0) return null;
+  let r1 = Infinity, c1 = Infinity, r2 = -Infinity, c2 = -Infinity;
+  sel.forEach(k => {
+    const p = parseKey(k);
+    if (p.r < r1) r1 = p.r;
+    if (p.c < c1) c1 = p.c;
+    if (p.r > r2) r2 = p.r;
+    if (p.c > c2) c2 = p.c;
+  });
+  return { r1, c1, r2, c2 };
+}
+
+/* 把外接矩形范围内的格子收集成集合 */
+function rectToSet(r1, c1, r2, c2) {
+  const s = new Set();
+  for (let r = Math.min(r1,r2); r <= Math.max(r1,r2); r++)
+    for (let c = Math.min(c1,c2); c <= Math.max(c1,c2); c++)
+      s.add(selKey(r, c));
+  return s;
+}
+
 function normRect(r1, c1, r2, c2) {
   return { r1: Math.min(r1,r2), c1: Math.min(c1,c2), r2: Math.max(r1,r2), c2: Math.max(c1,c2) };
 }
@@ -1051,15 +1155,6 @@ function inRect(rect, r, c) {
 }
 function rectSize(rect) {
   return { h: rect.r2 - rect.r1 + 1, w: rect.c2 - rect.c1 + 1 };
-}
-function selectionHasContent(rect) {
-  for (let r = rect.r1; r <= rect.r2; r++)
-    for (let c = rect.c1; c <= rect.c2; c++) {
-      const cl = gridData[r][c];
-      if ((cl.ground && cl.ground !== 'empty') || cl.base !== null || (cl.arrows && cl.arrows.length))
-        return true;
-    }
-  return false;
 }
 
 /* 重画箭头层（先清掉旧的，避免叠加） */
@@ -1077,9 +1172,9 @@ function paintSelection() {
   if (!gridEl) return;
   gridEl.querySelectorAll('.cell').forEach(el => {
     const r = +el.dataset.r, c = +el.dataset.c;
-    el.classList.toggle('selected', inRect(selection, r, c));
+    el.classList.toggle('selected', selHas(r, c));
   });
-  gridEl.classList.toggle('can-drag', !!selection);
+  gridEl.classList.toggle('can-drag', !selEmpty());
 }
 
 function clearSelection() {
@@ -1116,6 +1211,19 @@ function pointToCell(clientX, clientY) {
   };
 }
 
+/* 从像素坐标找浮动格（命中返回该浮动格信息，否则 null） */
+function pointToMidCell(clientX, clientY) {
+  const gridEl = document.getElementById('grid');
+  const rect = gridEl.getBoundingClientRect();
+  const px = clientX - rect.left;
+  const py = clientY - rect.top;
+  const mids = baseLineMidCells();
+  for (const m of mids) {
+    if (px >= m.x && px <= m.x + m.w && py >= m.y && py <= m.y + m.h) return m;
+  }
+  return null;
+}
+
 /* 只重绘两个矩形范围（拖动时用，避免全图重建） */
 function repaintRegion(rect) {
   for (let r = rect.r1; r <= rect.r2; r++) {
@@ -1126,40 +1234,390 @@ function repaintRegion(rect) {
   }
 }
 
-/* 移动选中区域：剪切 + 整体平移；越界的箭头删除 */
+/* ===== Alt 连线铺底板（矢量斜带）===== */
+
+/* 格中心 → 网格像素坐标（与 renderArrows 用同一套 step 计算） */
+function cellCenterPx(r, c) {
+  const step = CELL_SIZE + GAP;
+  return {
+    x: c * step + CELL_SIZE / 2,
+    y: r * step + CELL_SIZE / 2
+  };
+}
+
+/* 格中心到斜带中心线的距离（用于判断覆盖） */
+function distToLine(line, r, c) {
+  const p = cellCenterPx(r, c);
+  const a = cellCenterPx(line.r1, line.c1);
+  const b = cellCenterPx(line.r2, line.c2);
+
+  const vx = b.x - a.x, vy = b.y - a.y;
+  const wx = p.x - a.x, wy = p.y - a.y;
+  const len2 = vx * vx + vy * vy;
+
+  let t = len2 === 0 ? 0 : (wx * vx + wy * vy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const cx = a.x + t * vx, cy = a.y + t * vy;
+  return Math.hypot(p.x - cx, p.y - cy);
+}
+
+/* 该格是否被任何斜带盖住（盖住就不能放图标）
+   判定：格中心落在带子宽度内，即距离 < 半格 */
+function isCellCoveredByLine(r, c) {
+  for (const line of baseLines) {
+    if (distToLine(line, r, c) < CELL_SIZE / 2) return true;
+  }
+  return false;
+}
+
+/* ===== 斜带的浮动中点格 =====
+   位置：A、B 两格心的几何中点；正着放（不旋转），边长一格。
+   它由斜带唯一确定，所以不单独存储，每次实时算。 */
+function baseLineMidCells() {
+  const step = CELL_SIZE + GAP;
+  const out = [];
+  baseLines.forEach((line, idx) => {
+    if (line.r1 === line.r2 && line.c1 === line.c2) return;
+    const a = cellCenterPx(line.r1, line.c1);
+    const b = cellCenterPx(line.r2, line.c2);
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    out.push({
+      lineIndex: idx,
+      line,
+      // 浮动格矩形（左上角 + 尺寸）
+      x: mx - CELL_SIZE / 2,
+      y: my - CELL_SIZE / 2,
+      w: CELL_SIZE,
+      h: CELL_SIZE,
+      cx: mx, cy: my,
+      value: line.value
+    });
+  });
+  return out;
+}
+
+/* 某格是否被任何浮动格"碰到"（碰到就不能放图标） */
+function isCellTouchedByMid(midCells, r, c) {
+  const step = CELL_SIZE + GAP;
+  const x0 = c * step, y0 = r * step;
+  const x1 = x0 + CELL_SIZE, y1 = y0 + CELL_SIZE;
+  for (const m of midCells) {
+    // 两个矩形是否有交集
+    if (m.x < x1 && m.x + m.w > x0 && m.y < y1 && m.y + m.h > y0) return true;
+  }
+  return false;
+}
+
+/* 该格能否放图标？
+   只有【被浮动格碰到】的原格不能放（最多 4 个）。
+   斜带压过的格子照常能放（斜带只是底板）。 */
+function canPlaceIcon(r, c) {
+  return !isCellTouchedByMid(baseLineMidCells(), r, c);
+}
+
+/* 斜带层的 SVG（垫在所有格子/图标下方） */
+function ensureBaseLineLayer() {
+  const gridEl = document.getElementById('grid');
+  if (!gridEl) return null;
+
+  const step = CELL_SIZE + GAP;
+  const w = cols * CELL_SIZE + (cols - 1) * GAP;
+  const h = rows * CELL_SIZE + (rows - 1) * GAP;
+
+  let svg = gridEl.querySelector('.baseline-svg');
+  if (!svg) {
+    const ns = 'http://www.w3.org/2000/svg';
+    svg = document.createElementNS(ns, 'svg');
+    svg.classList.add('baseline-svg');
+    const firstCell = gridEl.querySelector('.cell');
+    if (firstCell) gridEl.insertBefore(svg, firstCell);
+    else gridEl.appendChild(svg);
+  }
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.style.width = w + 'px';
+  svg.style.height = h + 'px';
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // ---- 1. 白色底：格子是透明的，空白处靠它显示为白 ----
+  const bg = document.createElementNS(ns, 'rect');
+  bg.setAttribute('x', 0);
+  bg.setAttribute('y', 0);
+  bg.setAttribute('width', w);
+  bg.setAttribute('height', h);
+  bg.setAttribute('fill', '#ffffff');
+  svg.appendChild(bg);
+
+  // ---- 2. 网格线：垫在最底层（白底之上、斜带之下）----
+  const gridColor = '#dddddd';
+  function gridLine(x1, y1, x2, y2) {
+    const ln = document.createElementNS(ns, 'line');
+    ln.setAttribute('x1', x1);
+    ln.setAttribute('y1', y1);
+    ln.setAttribute('x2', x2);
+    ln.setAttribute('y2', y2);
+    ln.setAttribute('stroke', gridColor);
+    ln.setAttribute('stroke-width', GAP);
+    svg.appendChild(ln);
+  }
+  for (let r = 1; r < rows; r++) {
+    const y = r * step - GAP / 2;
+    gridLine(0, y, w, y);
+  }
+  for (let c = 1; c < cols; c++) {
+    const x = c * step - GAP / 2;
+    gridLine(x, 0, x, h);
+  }
+
+  // ---- 3. 斜带：取两个格子的凸包 ----
+  //   两个格子各是一个正方形，它们的凸包正好是"两端为完整格边、
+  //   中间平滑过渡"的形状，且必然填满两个格子。
+  //   （水平/垂直时就是一个长方形；斜向时是一个六边形。）
+  baseLines.forEach(line => {
+    const x0 = line.c1 * step, y0 = line.r1 * step;
+    const x1 = line.c2 * step, y1 = line.r2 * step;
+
+    if (line.r1 === line.r2 && line.c1 === line.c2) return;   // 同一格：不画
+
+    const pts = [
+      [x0, y0], [x0 + CELL_SIZE, y0],
+      [x0 + CELL_SIZE, y0 + CELL_SIZE], [x0, y0 + CELL_SIZE],
+      [x1, y1], [x1 + CELL_SIZE, y1],
+      [x1 + CELL_SIZE, y1 + CELL_SIZE], [x1, y1 + CELL_SIZE]
+    ];
+
+    // Andrew 单调链凸包
+    const hull = (list) => {
+      const p = list.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      const cross = (o, a, b) =>
+        (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+      const lower = [], upper = [];
+      for (const q of p) {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
+        lower.push(q);
+      }
+      for (let i = p.length - 1; i >= 0; i--) {
+        const q = p[i];
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
+        upper.push(q);
+      }
+      lower.pop(); upper.pop();
+      return lower.concat(upper);
+    };
+
+    const ring = hull(pts);
+    if (ring.length < 3) return;
+
+    const v = Math.round(255 * (1 - line.value / 100));
+    const poly = document.createElementNS(ns, 'polygon');
+    poly.setAttribute('points', ring.map(p => p[0] + ',' + p[1]).join(' '));
+    poly.setAttribute('fill', 'rgb(' + v + ',' + v + ',' + v + ')');
+    svg.appendChild(poly);
+  });
+
+  return svg;
+}
+
+/* 浮动格层：单独一个 SVG，垫在斜带之上、格子之下。
+   用 2px 描边画出"这里有个可用格子"的提示感，但平时不抢眼。 */
+function ensureMidCellLayer() {
+  const gridEl = document.getElementById('grid');
+  if (!gridEl) return null;
+
+  const step = CELL_SIZE + GAP;
+  const w = cols * CELL_SIZE + (cols - 1) * GAP;
+  const h = rows * CELL_SIZE + (rows - 1) * GAP;
+
+  let svg = gridEl.querySelector('.midcell-svg');
+  if (!svg) {
+    const ns = 'http://www.w3.org/2000/svg';
+    svg = document.createElementNS(ns, 'svg');
+    svg.classList.add('midcell-svg');
+    gridEl.appendChild(svg);
+  }
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.style.width = w + 'px';
+  svg.style.height = h + 'px';
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  baseLineMidCells().forEach((m) => {
+    const g = document.createElementNS(ns, 'g');
+    g.classList.add('mid-cell');
+    g.dataset.midIndex = m.lineIndex;
+
+    const rect = document.createElementNS(ns, 'rect');
+    rect.classList.add('mid-hit');
+    rect.setAttribute('x', m.x);
+    rect.setAttribute('y', m.y);
+    rect.setAttribute('width', m.w);
+    rect.setAttribute('height', m.h);
+    rect.setAttribute('fill', 'transparent');
+    g.appendChild(rect);
+
+    // 浮动格里的内容（图标 / 底板）
+    const content = midCells[m.lineIndex];
+    if (content) {
+      if (content.base !== null && content.base !== undefined) {
+        const v = Math.round(255 * (1 - content.base / 100));
+        const bg = document.createElementNS(ns, 'rect');
+        bg.setAttribute('x', m.x);
+        bg.setAttribute('y', m.y);
+        bg.setAttribute('width', m.w);
+        bg.setAttribute('height', m.h);
+        bg.setAttribute('fill', 'rgb(' + v + ',' + v + ',' + v + ')');
+        g.appendChild(bg);
+      }
+      if (content.ground && content.ground !== 'empty' && !NO_IMAGE_ICONS.has(content.ground)) {
+        const file = ICON_FILE_MAP[content.ground];
+        if (file) {
+          const im = document.createElementNS(ns, 'image');
+          im.setAttribute('x', m.x);
+          im.setAttribute('y', m.y);
+          im.setAttribute('width', m.w);
+          im.setAttribute('height', m.h);
+          im.setAttributeNS('http://www.w3.org/1999/xlink', 'href', ICONS_DIR + file + ICON_EXT);
+          g.appendChild(im);
+        }
+      }
+    }
+
+    svg.appendChild(g);
+  });
+  return svg;
+}
+
+function repaintBaseLines() {
+  ensureBaseLineLayer();
+}
+
+/* 校验并归一化从外部读入的斜带（防止坏数据把渲染搞崩） */
+function normalizeBaseLines(src) {
+  if (!Array.isArray(src)) return [];
+  const out = [];
+  src.forEach(l => {
+    if (!l || typeof l !== 'object') return;
+    const r1 = +l.r1, c1 = +l.c1, r2 = +l.r2, c2 = +l.c2;
+    if (![r1, c1, r2, c2].every(Number.isInteger)) return;
+    if (r1 < 0 || c1 < 0 || r2 < 0 || c2 < 0) return;
+    if (r1 >= rows || r2 >= rows || c1 >= cols || c2 >= cols) return;
+    let v = +l.value;
+    if (!isFinite(v)) v = 60;
+    v = Math.max(0, Math.min(100, Math.round(v)));
+    out.push({ r1, c1, r2, c2, value: v });
+  });
+  return out;
+}
+
+/* Alt + 左键单击：第一次记起点，第二次画斜带 */
+function altClick(r, c) {
+  const baseValue = +document.getElementById('baseLevel').value;
+
+  // 第一次点：记起点并高亮
+  if (!altStart) {
+    altStart = { r, c };
+    updateCell(r, c);
+    document.getElementById('baseEnable').checked = true;
+    return;
+  }
+
+  // 第二次点：同格 → 零长度斜带没有意义，忽略
+  if (altStart.r === r && altStart.c === c) {
+    altStart = null;
+    repaintAll();
+    return;
+  }
+
+  // 第二次点：记下这条斜带
+  baseLines.push({
+    r1: altStart.r, c1: altStart.c,
+    r2: r, c2: c,
+    value: baseValue
+  });
+
+  altStart = null;          // 画完自动重置，Alt 按着可连续画
+  pushHistory();
+  repaintAll();
+}
+
+/* 松开 Alt：斜带需要两个点，只点了一个就丢弃 */
+function cancelAltStart(commit) {
+  if (!altStart) return;
+  altStart = null;
+  repaintAll();
+}
+
+/* ===== 浮动格的操作 ===== */
+function handleMidCellClick(mid) {
+  const idx = mid.lineIndex;
+
+  // 橡皮擦：清掉浮动格里的内容
+  if (eraserOn || currentTool === 'eraser') {
+    if (midCells[idx]) {
+      delete midCells[idx];
+      pushHistory();
+      repaintAll();
+    }
+    return;
+  }
+
+  // 箭头层：浮动格也可以作为箭头的起点/终点
+  if (currentLayer === 'arrow') {
+    if (!currentTool.startsWith('arrow-')) return;
+    // 浮动格暂不支持箭头（它不在 gridData 里），给出提示
+    showToast('浮动格暂不支持箭头', 1800);
+    return;
+  }
+
+  if (currentTool.startsWith('arrow-')) return;
+
+  // 放图标
+  const cur = midCells[idx] || { ground: 'empty', base: null };
+  if (cur.ground === currentTool) return;
+
+  cur.ground = currentTool;
+  if (document.getElementById('baseEnable').checked) {
+    cur.base = +document.getElementById('baseLevel').value;
+  }
+  midCells[idx] = cur;
+  pushHistory();
+  repaintAll();
+}
+
+/* 移动选中区域：剪切 + 整体平移；越界的箭头删除。
+   支持任意形状（选区是格子集合）。 */
 function moveSelection(dr, dc) {
-  const { h, w } = rectSize(selection);
-  const nr1 = selection.r1 + dr;
-  const nc1 = selection.c1 + dc;
-  const oldRect = { r1: selection.r1, c1: selection.c1, r2: selection.r2, c2: selection.c2 };
+  if (selEmpty()) return;
+  const oldBounds = selBounds();
 
-  // 目标区域所有格子（先取出快照）
+  // 先取出所有选中格的内容快照
   const snapshot = [];
-  for (let r = 0; r < h; r++) {
-    for (let c = 0; c < w; c++) {
-      const src = gridData[selection.r1 + r][selection.c1 + c];
-      snapshot.push({
-        r, c,
-        ground: src.ground,
-        base: src.base,
-        arrows: (src.arrows || []).map(a => ({ color: a.color, toR: a.toR + dr, toC: a.toC + dc }))
-      });
-    }
-  }
+  selection.forEach(k => {
+    const p = parseKey(k);
+    const src = gridData[p.r][p.c];
+    snapshot.push({
+      r: p.r, c: p.c,
+      ground: src.ground,
+      base: src.base,
+      arrows: (src.arrows || []).map(a => ({ color: a.color, toR: a.toR + dr, toC: a.toC + dc }))
+    });
+  });
 
-  // 1. 清空原区域
-  for (let r = 0; r < h; r++) {
-    for (let c = 0; c < w; c++) {
-      const rr = selection.r1 + r, cc = selection.c1 + c;
-      gridData[rr][cc] = { ground: 'empty', base: null, arrows: [] };
-      delete groundOverflow[cellKey(rr, cc)];
-    }
-  }
+  // 1. 清空所有原位置
+  snapshot.forEach(item => {
+    gridData[item.r][item.c] = { ground: 'empty', base: null, arrows: [] };
+    delete groundOverflow[cellKey(item.r, item.c)];
+  });
 
   // 2. 写入新位置；终点越界的箭头丢弃
-  for (const item of snapshot) {
-    const rr = nr1 + item.r, cc = nc1 + item.c;
-    if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
+  const newSet = new Set();
+  snapshot.forEach(item => {
+    const rr = item.r + dr, cc = item.c + dc;
+    if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) return;
     const kept = item.arrows.filter(a =>
       a.toR >= 0 && a.toR < rows && a.toC >= 0 && a.toC < cols
     );
@@ -1167,42 +1625,110 @@ function moveSelection(dr, dc) {
     if (item.ground !== 'empty' || item.base !== null) {
       groundOverflow[cellKey(rr, cc)] = { ground: item.ground, base: item.base };
     }
-  }
+    newSet.add(selKey(rr, cc));
+  });
 
   // 3. 选区跟着走
-  selection = normRect(nr1, nc1, nr1 + h - 1, nc1 + w - 1);
+  selection = newSet.size ? newSet : null;
   rebuildArrowIndex();
+
+  return { oldBounds, newBounds: selBounds() };
 }
 
-/* 整个地图上绑定的鼠标逻辑（框选 / 拖动） */
+/* 能否整体移动：按外接矩形判断，整个外框都不出界才允许 */
+function canMoveSelection(dr, dc) {
+  const b = selBounds();
+  if (!b) return false;
+  return b.r1 + dr >= 0 && b.r2 + dr <= rows - 1
+      && b.c1 + dc >= 0 && b.c2 + dc <= cols - 1;
+}
+
+/* 整个地图上绑定的鼠标逻辑（框选 / 点选 / 拖动） */
+const LONG_PRESS_MS = 280;      // 长按多久算"拿起"
+
 function initSelectionDrag() {
   const gridEl = document.getElementById('grid');
 
+  let pressTimer = null;        // 长按计时器
+  let pendingPress = null;      // { r, c, x, y } 等待判定是点击还是长按
+
+  function cancelPress() {
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    pendingPress = null;
+  }
+
+  function beginDrag(r, c, mode) {
+    // mode: 'selection' 拖整个选区 / 'single' 拖单格
+    dragState = {
+      mode,
+      startR: r, startC: c,
+      lastR: r, lastC: c,
+      moved: false,
+      singleSnapshot: null
+    };
+    if (mode === 'single') {
+      // 单格：临时把这一格当作选区来移动
+      const src = gridData[r][c];
+      dragState.singleSnapshot = {
+        ground: src.ground,
+        base: src.base,
+        arrows: (src.arrows || []).map(a => ({ color: a.color, toR: a.toR, toC: a.toC }))
+      };
+      // 用只含这一格的集合来复用 moveSelection
+      savedSelectionForSingle = selection;
+      selection = new Set([selKey(r, c)]);
+      paintSelection();
+    }
+    gridEl.classList.add('dragging');
+  }
+
   gridEl.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
+    const p = pointToCell(e.clientX, e.clientY);
 
-    // --- Ctrl + 左键：开始拉框 ---
+    // --- 点在浮动格上：交给浮动格处理 ---
+    const mid = pointToMidCell(e.clientX, e.clientY);
+    if (mid && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleMidCellClick(mid);
+      suppressClick = true;
+      return;
+    }
+
+    // --- Alt + 左键：连线铺底板（最高优先级）---
+    if (e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      altClick(p.r, p.c);
+      suppressClick = true;
+      return;
+    }
+
+    // --- Ctrl + 左键：开始拉框（松手后才判定）---
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
-      const p = pointToCell(e.clientX, e.clientY);
-      marquee = { r1: p.r, c1: p.c, r2: p.r, c2: p.c };
+      marquee = { r1: p.r, c1: p.c, r2: p.r, c2: p.c, additive: !selEmpty() };
       updateMarqueeEl();
       return;
     }
 
-    // --- 已有选区且点在选区内：开始整体拖动 ---
-    if (selection) {
-      const p = pointToCell(e.clientX, e.clientY);
-      if (inRect(selection, p.r, p.c)) {
-        e.preventDefault();
-        dragState = {
-          startR: p.r, startC: p.c,
-          lastR: p.r, lastC: p.c,
-          moved: false
-        };
-        gridEl.classList.add('dragging');
-      }
+    // --- 已有选区且点在选区内：直接拖整个选区 ---
+    if (!selEmpty() && selHas(p.r, p.c)) {
+      e.preventDefault();
+      beginDrag(p.r, p.c, 'selection');
+      return;
     }
+
+    // --- 其余情况：等一等，看是"单击画图"还是"长按拖动单格" ---
+    pendingPress = { r: p.r, c: p.c };
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      if (!pendingPress) return;
+      beginDrag(pendingPress.r, pendingPress.c, 'single');
+      pendingPress = null;
+    }, LONG_PRESS_MS);
   });
 
   window.addEventListener('mousemove', (e) => {
@@ -1213,58 +1739,81 @@ function initSelectionDrag() {
       updateMarqueeEl();
       return;
     }
-    // 拖动整体中
+    // 拖动中
     if (dragState) {
       const p = pointToCell(e.clientX, e.clientY);
       let dr = p.r - dragState.lastR;
       let dc = p.c - dragState.lastC;
       if (dr === 0 && dc === 0) return;
 
-      // 边界卡住：整块能放下才移动
-      const { h, w } = rectSize(selection);
-      if (selection.r1 + dr < 0 || selection.r1 + dr + h - 1 > rows - 1) { dr = 0; }
-      if (selection.c1 + dc < 0 || selection.c1 + dc + w - 1 > cols - 1) { dc = 0; }
+      // 边界卡住：整个外接矩形能放下才移动
+      if (!canMoveSelection(dr, dc)) {
+        // 尝试单轴
+        if (canMoveSelection(dr, 0)) dc = 0;
+        else if (canMoveSelection(0, dc)) dr = 0;
+        else return;
+      }
       if (dr === 0 && dc === 0) return;
 
-      const oldRect = { r1: selection.r1, c1: selection.c1, r2: selection.r2, c2: selection.c2 };
-      moveSelection(dr, dc);
+      const res = moveSelection(dr, dc);
       dragState.lastR = p.r;
       dragState.lastC = p.c;
       dragState.moved = true;
 
-      // 只重绘"原位置 + 新位置"两片，避免大图全量重建
-      repaintRegion(oldRect);
-      repaintRegion(selection);
+      if (res) {
+        repaintRegion(res.oldBounds);
+        repaintRegion(res.newBounds);
+      }
       paintSelection();
-      repaintArrows();       // 箭头可能跨格子，整体重画
+      repaintArrows();
     }
   });
 
   window.addEventListener('mouseup', (e) => {
     if (e.button !== 0) return;
+    cancelPress();
 
     // 结束拉框
     if (marquee) {
       const rect = normRect(marquee.r1, marquee.c1, marquee.r2, marquee.c2);
+      const additive = marquee.additive;
       marquee = null;
       updateMarqueeEl();
       const { h, w } = rectSize(rect);
-      // 只点了一下、没拖动 -> 视为取消选择
+
       if (h === 1 && w === 1) {
-        clearSelection();
+        // Ctrl + 左键"单击"：切换这一格的选中状态
+        const r = rect.r1, c = rect.c1;
+        if (selHas(r, c)) selRemove(r, c);
+        else selAdd(r, c);
       } else {
-        selection = rect;
-        paintSelection();
+        const set = rectToSet(rect.r1, rect.c1, rect.r2, rect.c2);
+        if (additive) {
+          if (!selection) selection = new Set();
+          set.forEach(k => selection.add(k));
+        } else {
+          selection = set;
+        }
       }
-      suppressClick = true;         // 别让这次操作触发画图
+      if (selEmpty()) selection = null;
+      paintSelection();
+      suppressClick = true;
       return;
     }
 
-    // 结束整体拖动
+    // 结束拖动
     if (dragState) {
       const wasMoved = dragState.moved;
+      const mode = dragState.mode;
       dragState = null;
       gridEl.classList.remove('dragging');
+
+      if (mode === 'single') {
+        // 单格拖动结束：恢复原来的选区
+        selection = savedSelectionForSingle;
+        savedSelectionForSingle = null;
+        paintSelection();
+      }
       if (wasMoved) {
         pushHistory();
         suppressClick = true;
@@ -1272,39 +1821,44 @@ function initSelectionDrag() {
     }
   });
 
-  // 左键单击不再解散；只负责吃掉"拖完那一下"的误触
+  // 左键单击：吃掉"拖完那一下"的误触
   gridEl.addEventListener('click', (e) => {
     if (suppressClick) { suppressClick = false; e.stopPropagation(); e.preventDefault(); }
   }, true);
 
-  // 右键单击选区内 = 解散；其余情况仍走原来的右键擦除
+  // 右键：
+  //   Ctrl + 右键选区内 -> 把这一格移出选区
+  //   普通右键选区内   -> 解散整个选区
+  //   其余             -> 原来的右键擦除
   gridEl.addEventListener('contextmenu', (e) => {
-    // 框选/拖动过程中：屏蔽
     if (marquee || dragState) {
-      e.preventDefault();
-      e.stopPropagation();
+      e.preventDefault(); e.stopPropagation();
       return;
     }
-    // 有选区且点在选区内：解散，不擦除
-    if (selection) {
-      const p = pointToCell(e.clientX, e.clientY);
-      if (inRect(selection, p.r, p.c)) {
-        e.preventDefault();
-        e.stopPropagation();
-        clearSelection();
-        showToast('已取消选择');
-        return;
-      }
+    if (selEmpty()) return;              // 没选区 -> 走擦除
+    const p = pointToCell(e.clientX, e.clientY);
+    if (!selHas(p.r, p.c)) return;       // 点在选区外 -> 走擦除
+
+    e.preventDefault(); e.stopPropagation();
+    if (e.ctrlKey || e.metaKey) {
+      selRemove(p.r, p.c);
+      paintSelection();
+      if (selEmpty()) showToast('已取消选择');
+    } else {
+      clearSelection();
+      showToast('已取消选择');
     }
   }, true);
 }
 
+
 /* ===== 橡皮擦：两段式 ===== */
 function eraserAt(r, c) {
-  // 第一段：删掉所有指向该格的箭头。用反向索引直接命中，不再全表扫描。
+  let changed = false;
+
+  // ---- 第一段：删掉所有指向该格的箭头（入向）----
   const incoming = arrowIndex.get(cellKey(r, c));
   if (incoming && incoming.length > 0) {
-    // 先快照再清空，避免边遍历边改索引
     const targets = incoming.slice();
     targets.forEach(entry => {
       const src = gridData[entry.r][entry.c];
@@ -1312,17 +1866,35 @@ function eraserAt(r, c) {
       if (i !== -1) src.arrows.splice(i, 1);
     });
     arrowIndex.delete(cellKey(r, c));
+    changed = true;
     pushHistory();
     repaintAll();
     return;
   }
 
-  // 第二段：本格没有入向箭头，才删格子本身
+  // ---- 第二段：擦掉经过该格的斜带 ----
+  //   判定：格心到斜带中心线的距离小于半格
+  const hitLines = [];
+  baseLines.forEach((line, idx) => {
+    if (distToLine(line, r, c) < CELL_SIZE / 2) hitLines.push(idx);
+  });
+  if (hitLines.length > 0) {
+    // 从后往前删，避免下标错位
+    hitLines.slice().reverse().forEach(idx => baseLines.splice(idx, 1));
+    // 浮动格内容按老下标存，删完要重排
+    rebuildMidCellsAfterLineDelete(hitLines);
+    changed = true;
+    pushHistory();
+    repaintAll();
+    return;
+  }
+
+  // ---- 第三段：擦掉格子本身（图标 / 底板 / 出向箭头）----
   const cell = gridData[r][c];
   const hadSomething = (cell.ground && cell.ground !== 'empty')
-    || (cell.base !== null && cell.base !== undefined);
+    || (cell.base !== null && cell.base !== undefined)
+    || (cell.arrows && cell.arrows.length > 0);   // 光有箭头也算"有东西"
 
-  // 该格作为起点的出向箭头，也要一并从索引里摘掉
   if (cell.arrows && cell.arrows.length > 0) {
     cell.arrows.slice().forEach(a => indexRemoveArrow(r, c, a));
   }
@@ -1335,6 +1907,18 @@ function eraserAt(r, c) {
   if (!hadSomething) return;   // 本来就是空格，不必记历史
   pushHistory();
   repaintAll();
+}
+
+/* 删除若干条斜带后，重建浮动格内容的键（避免错位） */
+function rebuildMidCellsAfterLineDelete(deletedIdx) {
+  const next = {};
+  Object.keys(midCells).forEach(k => {
+    const old = +k;
+    const shift = deletedIdx.filter(d => d < old).length;
+    if (deletedIdx.indexOf(old) !== -1) return;   // 这条斜带没了，内容丢弃
+    next[old - shift] = midCells[k];
+  });
+  midCells = next;
 }
 
 function flashEraser() {
@@ -1489,6 +2073,12 @@ function handleCellClick(r, c) {
   if (currentTool.startsWith('arrow-')) return;
   if (gridData[r][c].ground === currentTool) return;
 
+  // 被浮动格碰到的格子：不能放图标（箭头不受影响，见上面分支）
+  if (!canPlaceIcon(r, c)) {
+    showToast('这里被浮动格占用了，不能放图标（箭头可以）', 1800);
+    return;
+  }
+
   gridData[r][c].ground = currentTool;
 
   if (document.getElementById('baseEnable').checked) {
@@ -1505,7 +2095,7 @@ function handleCellClick(r, c) {
 
 function pushHistory() {
   history = history.slice(0, historyIndex + 1);
-  history.push(JSON.stringify({ gridData, groundOverflow }));
+  history.push(JSON.stringify({ gridData, groundOverflow, baseLines, midCells }));
 
   // 环形缓冲：超出上限时丢掉最老的快照
   if (history.length > HISTORY_LIMIT) {
@@ -1553,7 +2143,7 @@ function doAutoSave() {
   let payload;
   try {
     payload = JSON.stringify({
-      v: 1, savedAt: Date.now(), cols, rows, gridData, groundOverflow
+      v: 1, savedAt: Date.now(), cols, rows, gridData, groundOverflow, baseLines, midCells
     });
   } catch (e) {
     return;                                  // 序列化失败就跳过，不影响编辑
@@ -1646,6 +2236,8 @@ function loadAutoSave() {
     gridData = normalized;
     groundOverflow = (d.groundOverflow && typeof d.groundOverflow === 'object')
       ? d.groundOverflow : {};
+    baseLines = normalizeBaseLines(d.baseLines);
+    midCells = (d.midCells && typeof d.midCells === 'object') ? d.midCells : {};
 
     arrowStart = null;
     rebuildArrowIndex();
@@ -1653,7 +2245,7 @@ function loadAutoSave() {
     document.getElementById('colsInput').value = cols;
     document.getElementById('rowsInput').value = rows;
 
-    history = [JSON.stringify({ gridData, groundOverflow })];
+    history = [JSON.stringify({ gridData, groundOverflow, baseLines, midCells })];
     historyIndex = 0;
     lastSavedAt = d.savedAt || Date.now();
     return true;
@@ -1696,6 +2288,8 @@ function undo() {
     const s = JSON.parse(history[historyIndex]);
     gridData = s.gridData;
     groundOverflow = s.groundOverflow;
+    midCells = s.midCells || {};
+    baseLines = s.baseLines || [];
     arrowStart = null;
     clearSelection();
     rebuildArrowIndex();
@@ -1708,6 +2302,8 @@ function redo() {
     const s = JSON.parse(history[historyIndex]);
     gridData = s.gridData;
     groundOverflow = s.groundOverflow;
+    midCells = s.midCells || {};
+    baseLines = s.baseLines || [];
     arrowStart = null;
     clearSelection();
     rebuildArrowIndex();
@@ -1798,6 +2394,9 @@ function confirmClear() {
     for (let c = 0; c < cols; c++)
       gridData[r][c] = { ground: 'empty', base: null, arrows: [] };
   groundOverflow = {};
+  baseLines = [];
+  midCells = {};
+  altStart = null;
   arrowStart = null;
   rebuildArrowIndex();
   pushHistory();
@@ -1806,7 +2405,7 @@ function confirmClear() {
 }
 
 function exportJSON() {
-  const data = { cols, rows, cells: gridData, groundOverflow };
+  const data = { cols, rows, cells: gridData, groundOverflow, baseLines, midCells };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1864,6 +2463,8 @@ function importJSON(e) {
           delete groundOverflow[k];
         }
       });
+      baseLines = normalizeBaseLines(data.baseLines);
+      midCells = (data.midCells && typeof data.midCells === 'object') ? data.midCells : {};
 
       // 兼容旧的 dir 写法
       const dirVec = {
@@ -1893,7 +2494,7 @@ function importJSON(e) {
       document.getElementById('colsInput').value = cols;
       document.getElementById('rowsInput').value = rows;
       rebuildArrowIndex();
-      history = [JSON.stringify({ gridData, groundOverflow })];
+      history = [JSON.stringify({ gridData, groundOverflow, baseLines, midCells })];
       historyIndex = 0;
       renderGrid();
       scheduleAutoSave();
@@ -2097,7 +2698,6 @@ document.querySelectorAll('.layer-btn').forEach(el => {
       modeSwitch.classList.remove('disabled');
       baseSetting.classList.remove('disabled');
       setTool('safeguard');
-      document.getElementById('hint').innerHTML = '· 图标层：点格子放置图标<br>· 可以直接鼠标右键使用橡皮擦~<br>· Ctrl + 拖动 = 框选，拖选中区域可整体移动<br>· 右键单击选中区域 = 解散';
       replayFade(document.getElementById('groundTools'));
     } else {
       document.getElementById('groundTools').style.display = 'none';
@@ -2105,7 +2705,6 @@ document.querySelectorAll('.layer-btn').forEach(el => {
       modeSwitch.classList.add('disabled');
       baseSetting.classList.add('disabled');
       setTool('arrow-red');
-      document.getElementById('hint').innerHTML = '· 箭头层：先点起点，再点终点<br>· 可以直接鼠标右键使用橡皮擦~';
       replayFade(document.getElementById('arrowTools'));
     }
     renderGrid();
@@ -2378,6 +2977,8 @@ document.addEventListener('keyup', (e) => {
 /* 切窗口时 keyup / mouseleave 可能收不到，统一在这里复位，避免"松开键还在滚" */
 function releaseAllKeys() {
   keysHeld.up = keysHeld.down = keysHeld.left = keysHeld.right = false;
+  // Alt 松开时若只点了一个点，就在那一格铺底板（按你的选择）
+  if (altStart) cancelAltStart(true);
 }
 window.addEventListener('blur', () => {
   releaseAllKeys();
@@ -2385,6 +2986,11 @@ window.addEventListener('blur', () => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { releaseAllKeys(); isHoveringMap = false; }
+});
+
+/* 单独监听 Alt 松开：只点了一个点的话，就在那一格铺底板 */
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'Alt' && altStart) cancelAltStart(true);
 });
 
 function holdLoop() {

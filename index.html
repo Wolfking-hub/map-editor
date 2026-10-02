@@ -454,12 +454,15 @@
     color: #e53935;
     border-color: #e53935;
     background: #fff;
+    cursor: pointer;
+    user-select: none;
   }
   .arrow-tool.eraser-tool:hover { background: #ffe5e5; }
   .arrow-tool.eraser-tool.active {
     background: #e53935;
     color: #fff;
     border-color: #e53935;
+    box-shadow: inset 0 2px 5px rgba(0,0,0,0.22);
   }
 
   .hint {
@@ -718,7 +721,6 @@
 
     <p class="hint" id="hint">
       · 图标层：点格子放置图标<br>
-      · 橡皮擦在右侧工具栏<br>
       · 可以直接鼠标右键使用橡皮擦~
     </p>
 
@@ -837,6 +839,10 @@ let currentMode = 'pve';
 let currentTool = 'eraser';
 let history = [], historyIndex = -1;
 let arrowStart = null;
+
+/* 橡皮擦开关：左键点一下开、再点一下关。
+   开着时点击格子=擦除；关掉后立刻恢复成你原先选中的工具，不改变任何其他状态。 */
+let eraserOn = false;
 
 const CELL_SIZE = 48;
 const GAP = 1;
@@ -1031,10 +1037,25 @@ function flashEraser() {
   const btn = document.getElementById('leftEraserBtn');
   btn.classList.add('active');
   setTimeout(() => {
-    if (currentTool !== 'eraser') {
+    // 开关本身是开着的就一直保持高亮，否则闪烁一下即收回
+    if (!eraserOn && currentTool !== 'eraser') {
       btn.classList.remove('active');
     }
   }, 180);
+}
+
+/* 橡皮擦开关：左键切换开/关，除此之外什么都不改 */
+function toggleEraser() {
+  eraserOn = !eraserOn;
+  updateEraserUI();
+}
+
+function updateEraserUI() {
+  const btn = document.getElementById('leftEraserBtn');
+  if (!btn) return;
+  btn.classList.toggle('active', eraserOn);
+  btn.setAttribute('aria-pressed', eraserOn ? 'true' : 'false');
+  btn.title = eraserOn ? '橡皮擦：已开启（点击关闭）' : '橡皮擦：已关闭（点击开启）';
 }
 
 function renderCellContent(cellEl, data) {
@@ -1132,7 +1153,8 @@ function renderArrows(gridEl) {
 }
 
 function handleCellClick(r, c) {
-  if (currentTool === 'eraser') {
+  // 橡皮擦开关优先：开着就擦，关掉后完全按原来的工具走
+  if (eraserOn || currentTool === 'eraser') {
     eraserAt(r, c);
     return;
   }
@@ -1769,7 +1791,7 @@ document.querySelectorAll('.layer-btn').forEach(el => {
       modeSwitch.classList.remove('disabled');
       baseSetting.classList.remove('disabled');
       setTool('safeguard');
-      document.getElementById('hint').innerHTML = '· 图标层：点格子放置图标<br>· 橡皮擦在右侧工具栏<br>· 可以直接鼠标右键使用橡皮擦~';
+      document.getElementById('hint').innerHTML = '· 图标层：点格子放置图标<br>· 可以直接鼠标右键使用橡皮擦~';
       replayFade(document.getElementById('groundTools'));
     } else {
       document.getElementById('groundTools').style.display = 'none';
@@ -1777,7 +1799,7 @@ document.querySelectorAll('.layer-btn').forEach(el => {
       modeSwitch.classList.add('disabled');
       baseSetting.classList.add('disabled');
       setTool('arrow-red');
-      document.getElementById('hint').innerHTML = '· 箭头层：先点起点，再点终点<br>· 橡皮擦在右侧工具栏<br>· 可以直接鼠标右键使用橡皮擦~';
+      document.getElementById('hint').innerHTML = '· 箭头层：先点起点，再点终点<br>· 可以直接鼠标右键使用橡皮擦~';
       replayFade(document.getElementById('arrowTools'));
     }
     renderGrid();
@@ -1802,6 +1824,7 @@ function setTool(type) {
     el.classList.toggle('active', el.dataset.type === type);
   });
   document.querySelectorAll('.arrow-tool').forEach(el => {
+    if (el.id === 'leftEraserBtn') return;   // 橡皮擦的高亮只由开关决定
     el.classList.toggle('active', el.dataset.type === type);
   });
 }
@@ -1813,6 +1836,18 @@ document.querySelectorAll('.arrow-tool').forEach(el => {
     renderGrid();
   };
 });
+
+/* 橡皮擦：单独的开关按钮。放在上面那个循环之后，
+   覆盖掉通用处理，避免被当成普通"箭头工具"选中。 */
+(function initEraserToggle() {
+  const btn = document.getElementById('leftEraserBtn');
+  if (!btn) return;
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    toggleEraser();
+  };
+  updateEraserUI();
+})();
 
 const baseLevel = document.getElementById('baseLevel');
 const baseLevelNum = document.getElementById('baseLevelNum');

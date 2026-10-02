@@ -405,6 +405,25 @@
     object-fit: contain;
     pointer-events: none;
   }
+  /* 无贴图图标的占位框（如"空气"）：虚线圈，表示这里是透明/空气 */
+  .icon-item .icon-placeholder {
+    width: 48px;
+    height: 48px;
+    border: 1px dashed #c0c0c0;
+    border-radius: 6px;
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(0,0,0,0.025),
+      rgba(0,0,0,0.025) 4px,
+      transparent 4px,
+      transparent 8px
+    );
+    pointer-events: none;
+  }
+  .icon-item.active .icon-placeholder {
+    border-color: #1a73e8;
+    background: rgba(26,115,232,0.08);
+  }
   .icon-item .name {
     font-size: 11px;
     color: #555;
@@ -448,6 +467,23 @@
     color: #999;
     margin: 8px 0 0 0;
     line-height: 1.5;
+  }
+
+  /* 次级小按钮：清除自动保存，低调不抢主操作 */
+  .save-btn {
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 12px;
+    border: 1px dashed #ccc;
+    border-radius: 8px;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+  }
+  .save-btn:hover {
+    background: #f7f7f7;
+    border-color: #aaa;
+    color: #555;
   }
 
   .export-menu-wrap {
@@ -574,6 +610,31 @@
     background: #c62828;
     border-color: #c62828;
   }
+
+  /* ===== 轻提示（替代 alert，风格与整体一致） ===== */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translate(-50%, 12px);
+    background: rgba(30, 30, 32, 0.92);
+    color: #fff;
+    font-size: 13px;
+    line-height: 1.4;
+    padding: 10px 16px;
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.22);
+    z-index: 2000;
+    max-width: 80vw;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 </style>
 </head>
 <body>
@@ -660,6 +721,8 @@
       · 橡皮擦在右侧工具栏<br>
       · 可以直接鼠标右键使用橡皮擦~
     </p>
+
+    <button class="save-btn" id="clearSaveBtn" onclick="onClearSaveClick()" title="清除浏览器里的自动保存（仅影响本机，不影响当前编辑的地图）">清除自动保存</button>
   </div>
 
   <div class="icon-col" id="groundTools">
@@ -683,10 +746,12 @@
     <p id="confirmText">确定清空地图？</p>
     <div class="modal-actions">
       <button onclick="closeConfirm()">取消</button>
-      <button class="danger" onclick="confirmClear()">清空</button>
+      <button class="danger" id="confirmOkBtn" onclick="confirmClear()">清空</button>
     </div>
   </div>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <script>
 const ICON_GROUPS = {
@@ -696,7 +761,8 @@ const ICON_GROUPS = {
       { id: 'p2', label: 'P2', file: 'start_p2' },
       { id: 'p3', label: 'P3', file: 'start_p3' },
       { id: 'p4', label: 'P4', file: 'start_p4' },
-      { id: 'safeguard', label: '保障点', file: 'safeguard' }
+      { id: 'safeguard', label: '保障点', file: 'safeguard' },
+      { id: 'air', label: '空气', file: 'air', noImage: true }
     ]},
     { name: '功能格', icons: [
       { id: 'teleport',        label: '传送门',      file: 'teleport' },
@@ -720,7 +786,8 @@ const ICON_GROUPS = {
       { id: 'p2', label: 'P2', file: 'start_p2' },
       { id: 'p3', label: 'P3', file: 'start_p3' },
       { id: 'p4', label: 'P4', file: 'start_p4' },
-      { id: 'safeguard', label: '保障点', file: 'safeguard' }
+      { id: 'safeguard', label: '保障点', file: 'safeguard' },
+      { id: 'air', label: '空气', file: 'air', noImage: true }
     ]},
     { name: '功能格', icons: [
       { id: 'teleport',    label: '传送门',    file: 'teleport' },
@@ -753,6 +820,12 @@ Object.values(ICON_GROUPS).forEach(groups =>
   groups.forEach(g => g.icons.forEach(i => { ICON_FILE_MAP[i.id] = i.file; }))
 );
 
+/* 无贴图图标（如"空气"）：格子里只铺底板，不画图；工具栏用虚线空框占位 */
+const NO_IMAGE_ICONS = new Set();
+Object.values(ICON_GROUPS).forEach(groups =>
+  groups.forEach(g => g.icons.forEach(i => { if (i.noImage) NO_IMAGE_ICONS.add(i.id); }))
+);
+
 const ARROW_STYLE = { lineWidth: 8, headLen: 24, headWidth: 20 };
 
 let cols = 12, rows = 12;
@@ -768,6 +841,45 @@ let arrowStart = null;
 const CELL_SIZE = 48;
 const GAP = 1;
 
+/* ===== 历史记录：环形缓冲，避免大图长时间编辑时内存无限膨胀 ===== */
+const HISTORY_LIMIT = 60;
+
+/* ===== 箭头反向索引：key 为终点 "r,c"，value 为该终点的来源记录列表 =====
+   让橡皮擦删箭头、删格子时清理箭头都不再全表扫描。 */
+let arrowIndex = new Map();
+
+function cellKey(r, c) { return r + ',' + c; }
+
+function indexAddArrow(sr, sc, arrow) {
+  const k = cellKey(arrow.toR, arrow.toC);
+  let list = arrowIndex.get(k);
+  if (!list) { list = []; arrowIndex.set(k, list); }
+  list.push({ r: sr, c: sc, arrow: arrow });
+}
+
+function indexRemoveArrow(sr, sc, arrow) {
+  const list = arrowIndex.get(cellKey(arrow.toR, arrow.toC));
+  if (!list) return;
+  const i = list.findIndex(e => e.r === sr && e.c === sc && e.arrow === arrow);
+  if (i !== -1) list.splice(i, 1);
+  if (list.length === 0) arrowIndex.delete(cellKey(arrow.toR, arrow.toC));
+}
+
+function rebuildArrowIndex() {
+  arrowIndex = new Map();
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const arr = gridData[r][c].arrows;
+      if (!arr || arr.length === 0) continue;
+      for (let i = 0; i < arr.length; i++) {
+        const a = arr[i];
+        if (a.toR === undefined || a.toC === undefined) continue;
+        indexAddArrow(r, c, a);
+      }
+    }
+  }
+}
+
 function initGrid(c, r) {
   cols = c; rows = r;
   gridData = [];
@@ -778,6 +890,7 @@ function initGrid(c, r) {
   }
   groundOverflow = {};
   arrowStart = null;
+  rebuildArrowIndex();
   history = [JSON.stringify({ gridData, groundOverflow })];
   historyIndex = 0;
   renderGrid();
@@ -801,11 +914,20 @@ function renderIconGroups() {
       item.className = 'icon-item' + (currentTool === icon.id ? ' active' : '');
       item.dataset.type = icon.id;
       item.style.animationDelay = (ii * 0.01) + 's';
-      const img = document.createElement('img');
-      img.src = ICONS_DIR + icon.file + ICON_EXT;
-      img.alt = icon.label;
-      img.onerror = () => { img.style.opacity = 0.2; };
-      item.appendChild(img);
+
+      if (icon.noImage) {
+        // 空气这类无贴图图标：用虚线空框占位，避免出现破图
+        const ph = document.createElement('div');
+        ph.className = 'icon-placeholder';
+        item.appendChild(ph);
+      } else {
+        const img = document.createElement('img');
+        img.src = ICONS_DIR + icon.file + ICON_EXT;
+        img.alt = icon.label;
+        img.onerror = () => { img.style.opacity = 0.2; };
+        item.appendChild(img);
+      }
+
       const name = document.createElement('div');
       name.className = 'name';
       name.textContent = icon.label;
@@ -828,50 +950,81 @@ function renderGrid() {
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const cell = document.createElement('div');
-      cell.className = 'cell';
-      cell.dataset.r = r;
-      cell.dataset.c = c;
-      if (arrowStart && arrowStart.r === r && arrowStart.c === c) {
-        cell.classList.add('arrow-start');
-      }
-      cell.onclick = () => handleCellClick(r, c);
-      cell.oncontextmenu = (e) => {
-        e.preventDefault();
-        flashEraser();
-        eraserAt(r, c);
-      };
-      renderCellContent(cell, gridData[r][c]);
-      gridEl.appendChild(cell);
+      gridEl.appendChild(buildCell(r, c));
     }
   }
   renderArrows(gridEl);
 }
 
+/* 构建单个格子元素（全量渲染与单格增量渲染共用） */
+function buildCell(r, c) {
+  const cell = document.createElement('div');
+  cell.className = 'cell';
+  cell.dataset.r = r;
+  cell.dataset.c = c;
+  if (arrowStart && arrowStart.r === r && arrowStart.c === c) {
+    cell.classList.add('arrow-start');
+  }
+  cell.onclick = () => handleCellClick(r, c);
+  cell.oncontextmenu = (e) => {
+    e.preventDefault();
+    flashEraser();
+    eraserAt(r, c);
+  };
+  renderCellContent(cell, gridData[r][c]);
+  return cell;
+}
+
+/* 只重绘一个格子：避免每次点击都重建全部 DOM（大图卡顿的主因） */
+function updateCell(r, c) {
+  const gridEl = document.getElementById('grid');
+  const cell = gridEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+  if (!cell) return;
+  cell.classList.toggle('arrow-start', !!arrowStart && arrowStart.r === r && arrowStart.c === c);
+  renderCellContent(cell, gridData[r][c]);
+}
+
+/* 重绘格子 + 箭头层（改箭头时才需要） */
+function repaintAll() {
+  renderGrid();
+}
+
 /* ===== 橡皮擦：两段式 ===== */
 function eraserAt(r, c) {
-  let removedAny = false;
-  for (let rr = 0; rr < rows; rr++) {
-    for (let cc = 0; cc < cols; cc++) {
-      const before = gridData[rr][cc].arrows.length;
-      gridData[rr][cc].arrows = gridData[rr][cc].arrows.filter(a => !(a.toR === r && a.toC === c));
-      if (gridData[rr][cc].arrows.length !== before) {
-        removedAny = true;
-      }
-    }
-  }
-  if (removedAny) {
+  // 第一段：删掉所有指向该格的箭头。用反向索引直接命中，不再全表扫描。
+  const incoming = arrowIndex.get(cellKey(r, c));
+  if (incoming && incoming.length > 0) {
+    // 先快照再清空，避免边遍历边改索引
+    const targets = incoming.slice();
+    targets.forEach(entry => {
+      const src = gridData[entry.r][entry.c];
+      const i = src.arrows.indexOf(entry.arrow);
+      if (i !== -1) src.arrows.splice(i, 1);
+    });
+    arrowIndex.delete(cellKey(r, c));
     pushHistory();
-    renderGrid();
+    repaintAll();
     return;
   }
 
-  gridData[r][c].ground = 'empty';
-  gridData[r][c].base = null;
-  gridData[r][c].arrows = [];
-  delete groundOverflow[`${r},${c}`];
+  // 第二段：本格没有入向箭头，才删格子本身
+  const cell = gridData[r][c];
+  const hadSomething = (cell.ground && cell.ground !== 'empty')
+    || (cell.base !== null && cell.base !== undefined);
+
+  // 该格作为起点的出向箭头，也要一并从索引里摘掉
+  if (cell.arrows && cell.arrows.length > 0) {
+    cell.arrows.slice().forEach(a => indexRemoveArrow(r, c, a));
+  }
+
+  cell.ground = 'empty';
+  cell.base = null;
+  cell.arrows = [];
+  delete groundOverflow[cellKey(r, c)];
+
+  if (!hadSomething) return;   // 本来就是空格，不必记历史
   pushHistory();
-  renderGrid();
+  repaintAll();
 }
 
 function flashEraser() {
@@ -896,13 +1049,16 @@ function renderCellContent(cellEl, data) {
   }
 
   if (data.ground && data.ground !== 'empty') {
-    const file = ICON_FILE_MAP[data.ground];
-    if (file) {
-      const img = document.createElement('img');
-      img.className = 'icon-img';
-      img.src = ICONS_DIR + file + ICON_EXT;
-      img.alt = data.ground;
-      cellEl.appendChild(img);
+    // "空气"这类无贴图图标：只保留底板，不画图
+    if (!NO_IMAGE_ICONS.has(data.ground)) {
+      const file = ICON_FILE_MAP[data.ground];
+      if (file) {
+        const img = document.createElement('img');
+        img.className = 'icon-img';
+        img.src = ICONS_DIR + file + ICON_EXT;
+        img.alt = data.ground;
+        cellEl.appendChild(img);
+      }
     }
   }
 }
@@ -983,38 +1139,230 @@ function handleCellClick(r, c) {
 
   if (currentLayer === 'arrow') {
     if (!currentTool.startsWith('arrow-')) return;
-    if (!arrowStart) { arrowStart = { r, c }; renderGrid(); return; }
-    if (arrowStart.r === r && arrowStart.c === c) return;
-    gridData[arrowStart.r][arrowStart.c].arrows.push({
-      color: currentTool, toR: r, toC: c
-    });
+
+    if (!arrowStart) {
+      arrowStart = { r, c };
+      updateCell(r, c);                       // 只更新起点高亮
+      return;
+    }
+
+    if (arrowStart.r === r && arrowStart.c === c) return;   // 同格，忽略
+
+    const arrow = { color: currentTool, toR: r, toC: c };
+    gridData[arrowStart.r][arrowStart.c].arrows.push(arrow);
+    indexAddArrow(arrowStart.r, arrowStart.c, arrow);
+
+    const prev = arrowStart;
     arrowStart = null;
-    pushHistory(); renderGrid();
+    updateCell(prev.r, prev.c);               // 清掉旧起点高亮
+    pushHistory();
+    repaintAll();                             // 箭头层整体重画
     return;
   }
 
   if (currentTool.startsWith('arrow-')) return;
-
   if (gridData[r][c].ground === currentTool) return;
 
   gridData[r][c].ground = currentTool;
-  groundOverflow[`${r},${c}`] = {
-    ground: currentTool,
-    base: gridData[r][c].base
-  };
 
   if (document.getElementById('baseEnable').checked) {
     gridData[r][c].base = +document.getElementById('baseLevel').value;
-    groundOverflow[`${r},${c}`].base = gridData[r][c].base;
   }
+  groundOverflow[cellKey(r, c)] = {
+    ground: gridData[r][c].ground,
+    base: gridData[r][c].base
+  };
 
-  pushHistory(); renderGrid();
+  pushHistory();
+  updateCell(r, c);                           // 单格重绘，不再重建全图
 }
 
 function pushHistory() {
   history = history.slice(0, historyIndex + 1);
   history.push(JSON.stringify({ gridData, groundOverflow }));
-  historyIndex++;
+
+  // 环形缓冲：超出上限时丢掉最老的快照
+  if (history.length > HISTORY_LIMIT) {
+    history.splice(0, history.length - HISTORY_LIMIT);
+  }
+  historyIndex = history.length - 1;
+
+  scheduleAutoSave();
+}
+
+/* ===== 自动保存到 localStorage ===== */
+const AUTOSAVE_KEY = 'map-editor:autosave:v1';
+const AUTOSAVE_DELAY = 800;           // 停手 800ms 后才写
+const AUTOSAVE_MAX_BYTES = 4.5 * 1024 * 1024;   // 接近 5MB 配额就停用
+
+let autoSaveTimer = null;
+let autoSaveDisabled = false;         // 一旦因配额/无痕不可用，本次会话不再尝试
+let autoSaveWarned = false;
+let lastSavedAt = 0;
+
+/* 探测 localStorage 是否真的可用（无痕模式、禁用 Cookie 都会抛异常） */
+function storageAvailable() {
+  try {
+    const k = '__probe__';
+    window.localStorage.setItem(k, '1');
+    window.localStorage.removeItem(k);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+const STORAGE_OK = storageAvailable();
+
+function scheduleAutoSave() {
+  if (autoSaveDisabled || !STORAGE_OK) return;
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(doAutoSave, AUTOSAVE_DELAY);
+}
+
+function doAutoSave() {
+  autoSaveTimer = null;
+  if (autoSaveDisabled || !STORAGE_OK) return;
+
+  let payload;
+  try {
+    payload = JSON.stringify({
+      v: 1, savedAt: Date.now(), cols, rows, gridData, groundOverflow
+    });
+  } catch (e) {
+    return;                                  // 序列化失败就跳过，不影响编辑
+  }
+
+  // 大图保护：超过配额上限就停用，只提示一次
+  if (payload.length > AUTOSAVE_MAX_BYTES) {
+    autoSaveDisabled = true;
+    if (!autoSaveWarned) {
+      autoSaveWarned = true;
+      showToast('地图太大，自动保存已停用（请用「导出 JSON」手动备份）', 4200);
+    }
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(AUTOSAVE_KEY, payload);
+    lastSavedAt = Date.now();
+  } catch (e) {
+    // QuotaExceededError 等：停用并提示一次
+    autoSaveDisabled = true;
+    if (!autoSaveWarned) {
+      autoSaveWarned = true;
+      showToast('浏览器存储空间不足，自动保存已停用', 4200);
+    }
+  }
+}
+
+/* 页面关闭前尽力保存一次，避免"停手不到 800ms 就关掉"丢改动 */
+window.addEventListener('beforeunload', () => {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+    doAutoSave();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && autoSaveTimer) {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+    doAutoSave();
+  }
+});
+
+/* 读取存档；返回是否成功恢复 */
+function loadAutoSave() {
+  if (!STORAGE_OK) return false;
+  let raw;
+  try { raw = window.localStorage.getItem(AUTOSAVE_KEY); } catch (e) { return false; }
+  if (!raw) return false;
+
+  try {
+    const d = JSON.parse(raw);
+    const cells = d && (d.cells || d.gridData);   // 兼容导出格式(cells)与存档格式(gridData)
+    if (!d || !Number.isInteger(d.cols) || !Number.isInteger(d.rows)
+        || d.cols < 1 || d.rows < 1 || d.cols > 200 || d.rows > 200
+        || !Array.isArray(cells) || cells.length !== d.rows) return false;
+
+    // 与导入同样做一次结构归一化，坏数据不至于让编辑器崩掉
+    const normalized = [];
+    for (let r = 0; r < d.rows; r++) {
+      const srcRow = cells[r];
+      if (!Array.isArray(srcRow) || srcRow.length !== d.cols) return false;
+      const row = [];
+      for (let c = 0; c < d.cols; c++) {
+        const src = srcRow[c];
+        const cell = (src && typeof src === 'object') ? src : {};
+        row.push({
+          ground: (typeof cell.ground === 'string' && cell.ground) ? cell.ground : 'empty',
+          base: (typeof cell.base === 'number' && isFinite(cell.base)) ? cell.base : null,
+          arrows: Array.isArray(cell.arrows) ? cell.arrows.slice() : []
+        });
+      }
+      normalized.push(row);
+    }
+
+    // 清洗箭头
+    for (let r = 0; r < d.rows; r++) {
+      for (let c = 0; c < d.cols; c++) {
+        normalized[r][c].arrows = normalized[r][c].arrows.filter(a =>
+          a && a.toR !== undefined && a.toC !== undefined
+          && a.toR >= 0 && a.toR < d.rows && a.toC >= 0 && a.toC < d.cols
+          && (a.toR !== r || a.toC !== c)
+        );
+      }
+    }
+
+    cols = d.cols;
+    rows = d.rows;
+    gridData = normalized;
+    groundOverflow = (d.groundOverflow && typeof d.groundOverflow === 'object')
+      ? d.groundOverflow : {};
+
+    arrowStart = null;
+    rebuildArrowIndex();
+
+    document.getElementById('colsInput').value = cols;
+    document.getElementById('rowsInput').value = rows;
+
+    history = [JSON.stringify({ gridData, groundOverflow })];
+    historyIndex = 0;
+    lastSavedAt = d.savedAt || Date.now();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function hasAutoSave() {
+  if (!STORAGE_OK) return false;
+  try { return !!window.localStorage.getItem(AUTOSAVE_KEY); } catch (e) { return false; }
+}
+
+function clearAutoSave(silent) {
+  if (!STORAGE_OK) return;
+  try {
+    window.localStorage.removeItem(AUTOSAVE_KEY);
+    lastSavedAt = 0;
+    if (!silent) showToast('已清除自动保存');
+  } catch (e) { /* 忽略 */ }
+}
+
+/* ===== 清除自动保存：复用现有确认框 ===== */
+let confirmAction = null;          // null = 清空地图；函数 = 自定义动作
+
+function onClearSaveClick() {
+  if (!hasAutoSave()) { showToast('当前没有自动保存的存档'); return; }
+  confirmAction = () => {
+    clearAutoSave(false);
+    autoSaveDisabled = false;      // 手动清过之后，允许重新开始保存
+    autoSaveWarned = false;
+  };
+  document.getElementById('confirmText').textContent = '确定清除浏览器里的自动保存？此操作不影响当前正在编辑的地图。';
+  document.getElementById('confirmOkBtn').textContent = '清除';
+  document.getElementById('confirmModal').classList.add('show');
 }
 function undo() {
   if (historyIndex > 0) {
@@ -1022,7 +1370,9 @@ function undo() {
     const s = JSON.parse(history[historyIndex]);
     gridData = s.gridData;
     groundOverflow = s.groundOverflow;
-    arrowStart = null; renderGrid();
+    arrowStart = null;
+    rebuildArrowIndex();
+    renderGrid();
   }
 }
 function redo() {
@@ -1031,7 +1381,9 @@ function redo() {
     const s = JSON.parse(history[historyIndex]);
     gridData = s.gridData;
     groundOverflow = s.groundOverflow;
-    arrowStart = null; renderGrid();
+    arrowStart = null;
+    rebuildArrowIndex();
+    renderGrid();
   }
 }
 document.addEventListener('keydown', (e) => {
@@ -1046,7 +1398,8 @@ function resizeGrid() {
   const newCols = +document.getElementById('colsInput').value;
   const newRows = +document.getElementById('rowsInput').value;
   if (newCols < 1 || newCols > 200 || newRows < 1 || newRows > 200) {
-    alert('长和宽的范围都是 1–200'); return;
+    showToast('长和宽的范围都是 1–200');
+    return;
   }
 
   for (let r = 0; r < rows; r++) {
@@ -1091,22 +1444,34 @@ function resizeGrid() {
   rows = newRows;
   gridData = newData;
   arrowStart = null;
+  rebuildArrowIndex();
   pushHistory();
   renderGrid();
 }
 
 function clearGrid() {
+  confirmAction = null;            // 清空地图
+  document.getElementById('confirmText').textContent = '确定清空地图？';
+  document.getElementById('confirmOkBtn').textContent = '清空';
   document.getElementById('confirmModal').classList.add('show');
 }
 function closeConfirm() {
   document.getElementById('confirmModal').classList.remove('show');
+  confirmAction = null;
 }
 function confirmClear() {
+  if (confirmAction) {
+    const fn = confirmAction;
+    closeConfirm();
+    fn();
+    return;
+  }
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++)
       gridData[r][c] = { ground: 'empty', base: null, arrows: [] };
   groundOverflow = {};
   arrowStart = null;
+  rebuildArrowIndex();
   pushHistory();
   renderGrid();
   closeConfirm();
@@ -1127,15 +1492,52 @@ function importJSON(e) {
   reader.onload = (ev) => {
     try {
       const data = JSON.parse(ev.target.result);
-      if (!data.cols || !data.rows || !data.cells) throw new Error('格式不对');
-      cols = data.cols; rows = data.rows; gridData = data.cells;
-      groundOverflow = data.groundOverflow || {};
+
+      // 校验：行列必须是正整数，cells 必须是与行列匹配的二维数组
+      if (!Number.isInteger(data.cols) || !Number.isInteger(data.rows)
+          || data.cols < 1 || data.rows < 1
+          || data.cols > 200 || data.rows > 200) {
+        throw new Error('行列数必须是 1–200 的整数');
+      }
+      if (!Array.isArray(data.cells) || data.cells.length !== data.rows) {
+        throw new Error('cells 与行数不匹配');
+      }
+
+      const normalized = [];
+      for (let r = 0; r < data.rows; r++) {
+        const srcRow = data.cells[r];
+        if (!Array.isArray(srcRow) || srcRow.length !== data.cols) {
+          throw new Error(`第 ${r + 1} 行的列数与 cols 不匹配`);
+        }
+        const row = [];
+        for (let c = 0; c < data.cols; c++) {
+          const src = srcRow[c];
+          const cell = (src && typeof src === 'object') ? src : {};
+          row.push({
+            ground: (typeof cell.ground === 'string' && cell.ground) ? cell.ground : 'empty',
+            base: (typeof cell.base === 'number' && isFinite(cell.base)) ? cell.base : null,
+            arrows: Array.isArray(cell.arrows) ? cell.arrows.slice() : []
+          });
+        }
+        normalized.push(row);
+      }
+
+      cols = data.cols;
+      rows = data.rows;
+      gridData = normalized;
+
+      groundOverflow = (data.groundOverflow && typeof data.groundOverflow === 'object')
+        ? data.groundOverflow : {};
       Object.keys(groundOverflow).forEach(k => {
         const v = groundOverflow[k];
         if (typeof v === 'string') {
           groundOverflow[k] = { ground: v, base: null };
+        } else if (!v || typeof v !== 'object') {
+          delete groundOverflow[k];
         }
       });
+
+      // 兼容旧的 dir 写法
       const dirVec = {
         right: [0, 1], left: [0, -1], up: [-1, 0], down: [1, 0],
         'up-right': [-1, 1], 'up-left': [-1, -1],
@@ -1144,23 +1546,32 @@ function importJSON(e) {
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           const cell = gridData[r][c];
-          if (cell.base === undefined) cell.base = null;
-          if (!cell.arrows) { cell.arrows = []; continue; }
           cell.arrows.forEach(a => {
-            if (a.toR === undefined && a.dir) {
+            if (a && a.toR === undefined && a.dir) {
               const [dr, dc] = dirVec[a.dir] || [0, 1];
               a.toR = r + dr; a.toC = c + dc;
             }
           });
+          // 丢弃越界或残缺的箭头，避免渲染期出现 undefined 颜色
+          cell.arrows = cell.arrows.filter(a =>
+            a && a.toR !== undefined && a.toC !== undefined
+            && a.toR >= 0 && a.toR < rows && a.toC >= 0 && a.toC < cols
+            && (a.toR !== r || a.toC !== c)
+          );
         }
       }
+
       arrowStart = null;
       document.getElementById('colsInput').value = cols;
       document.getElementById('rowsInput').value = rows;
-      history = [JSON.stringify({ gridData, groundOverflow })]; historyIndex = 0;
+      rebuildArrowIndex();
+      history = [JSON.stringify({ gridData, groundOverflow })];
+      historyIndex = 0;
       renderGrid();
+      scheduleAutoSave();
+      showToast('导入成功');
     } catch (err) {
-      alert('导入失败：' + err.message);
+      showToast('导入失败：' + err.message);
     }
   };
   reader.readAsText(file);
@@ -1185,7 +1596,7 @@ async function exportPNG(mode) {
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++) {
       const g = gridData[r][c].ground;
-      if (g && g !== 'empty') usedIcons.add(g);
+      if (g && g !== 'empty' && !NO_IMAGE_ICONS.has(g)) usedIcons.add(g);
     }
 
   const imgMap = {};
@@ -1259,6 +1670,8 @@ async function exportPNG(mode) {
 
       data.arrows.forEach(arrow => {
         if (arrow.toR === undefined || arrow.toC === undefined) return;
+        const strokeColor = colorMap[arrow.color];
+        if (!strokeColor) return;              // 与 SVG 渲染保持一致，避免画出黑色箭头
         const tx = withGap ? arrow.toC * step + CELL_SIZE/2 : arrow.toC * CELL_SIZE + CELL_SIZE/2;
         const ty = withGap ? arrow.toR * step + CELL_SIZE/2 : arrow.toR * CELL_SIZE + CELL_SIZE/2;
 
@@ -1270,7 +1683,7 @@ async function exportPNG(mode) {
         const lineEndY = ty - uy * (headLen * 0.5);
 
         ctx.globalAlpha = arrowAlpha;
-        ctx.strokeStyle = colorMap[arrow.color];
+        ctx.strokeStyle = strokeColor;
         ctx.lineWidth = lineWidth;
         ctx.lineCap = 'round';
         ctx.beginPath();
@@ -1281,7 +1694,7 @@ async function exportPNG(mode) {
         const baseX = tx - ux * headLen;
         const baseY = ty - uy * headLen;
         const px = -uy, py = ux;
-        ctx.fillStyle = colorMap[arrow.color];
+        ctx.fillStyle = strokeColor;
         ctx.beginPath();
         ctx.moveTo(tx, ty);
         ctx.lineTo(baseX + px * (headWidth / 2), baseY + py * (headWidth / 2));
@@ -1306,9 +1719,27 @@ function toggleExportMenu(e) {
   const menu = document.getElementById('exportMenu');
   menu.classList.toggle('show');
 }
-document.addEventListener('click', () => {
-  document.getElementById('exportMenu').classList.remove('show');
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('exportMenu');
+  if (!menu.classList.contains('show')) return;
+  // 点在菜单内部不关闭；其余位置一律关闭
+  if (e.target.closest && e.target.closest('.export-menu')) return;
+  menu.classList.remove('show');
 });
+
+/* ===== 轻提示 ===== */
+let toastTimer = null;
+function showToast(msg, duration) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.remove('show');
+    toastTimer = null;
+  }, duration || 2200);
+}
 
 document.getElementById('exportArrowAlpha').addEventListener('change', function() {
   document.getElementById('exportAlphaToggle').classList.toggle('active', this.checked);
@@ -1540,9 +1971,22 @@ function initTickBar(tickId, inputId, maxVal, hintId, minVal) {
 initTickBar('colsTick', 'colsInput', 200, 'colsHint', 1);
 initTickBar('rowsTick', 'rowsInput', 200, 'rowsHint', 1);
 
+/* 启动：有存档就恢复，否则用默认空图 */
 initGrid(12, 12);
+const restored = loadAutoSave();
 renderIconGroups();
 setTool('safeguard');
+if (restored) {
+  renderGrid();
+  const t = lastSavedAt ? new Date(lastSavedAt) : null;
+  const when = t
+    ? `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`
+    : '';
+  showToast(`已恢复上次编辑${when ? '（' + when + '）' : ''}`, 2600);
+  lastSavedAt = t ? lastSavedAt : 0;
+} else if (!STORAGE_OK) {
+  showToast('浏览器存储不可用，自动保存已关闭', 3200);
+}
 
 document.getElementById('modeSwitch').classList.remove('disabled');
 document.getElementById('baseSetting').classList.remove('disabled');
@@ -1585,6 +2029,18 @@ document.addEventListener('keyup', (e) => {
   const dir = keyDirection(e.key, e.code);
   if (!dir) return;
   keysHeld[dir] = false;
+});
+
+/* 切窗口时 keyup / mouseleave 可能收不到，统一在这里复位，避免"松开键还在滚" */
+function releaseAllKeys() {
+  keysHeld.up = keysHeld.down = keysHeld.left = keysHeld.right = false;
+}
+window.addEventListener('blur', () => {
+  releaseAllKeys();
+  isHoveringMap = false;
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { releaseAllKeys(); isHoveringMap = false; }
 });
 
 function holdLoop() {

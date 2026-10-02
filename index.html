@@ -2527,6 +2527,11 @@ async function exportPNG(mode) {
       const g = gridData[r][c].ground;
       if (g && g !== 'empty' && !NO_IMAGE_ICONS.has(g)) usedIcons.add(g);
     }
+  // 浮动格里的图标也要一起加载
+  Object.values(midCells).forEach(mc => {
+    const g = mc && mc.ground;
+    if (g && g !== 'empty' && !NO_IMAGE_ICONS.has(g)) usedIcons.add(g);
+  });
 
   const imgMap = {};
   await Promise.all([...usedIcons].map(id => new Promise(resolve => {
@@ -2587,6 +2592,67 @@ async function exportPNG(mode) {
       }
     }
   }
+
+  // ---- 斜带底板（画在逐格底板之上、图标之下）----
+  //  坐标系按当前模式换算：带网格用 step（含 1px 间隙），不带网格用 CELL_SIZE
+  const px = (n) => withGap ? n * step : n * CELL_SIZE;
+  const hullOf = (list) => {
+    const p = list.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) =>
+      (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const q of p) {
+      while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop();
+      lo.push(q);
+    }
+    for (let i = p.length - 1; i >= 0; i--) {
+      const q = p[i];
+      while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop();
+      up.push(q);
+    }
+    lo.pop(); up.pop();
+    return lo.concat(up);
+  };
+
+  baseLines.forEach(line => {
+    if (line.r1 === line.r2 && line.c1 === line.c2) return;
+    const bx0 = px(line.c1), by0 = px(line.r1);
+    const bx1 = px(line.c2), by1 = px(line.r2);
+    const pts = [
+      [bx0, by0], [bx0 + CELL_SIZE, by0],
+      [bx0 + CELL_SIZE, by0 + CELL_SIZE], [bx0, by0 + CELL_SIZE],
+      [bx1, by1], [bx1 + CELL_SIZE, by1],
+      [bx1 + CELL_SIZE, by1 + CELL_SIZE], [bx1, by1 + CELL_SIZE]
+    ];
+    const ring = hullOf(pts);
+    if (ring.length < 3) return;
+
+    const v = Math.round(255 * (1 - line.value / 100));
+    ctx.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
+    ctx.beginPath();
+    ctx.moveTo(ring[0][0], ring[0][1]);
+    for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i][0], ring[i][1]);
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  // ---- 浮动格（含自身底板与图标，画在斜带之上）----
+  baseLineMidCells().forEach(m => {
+    const mx = withGap ? m.x : (m.x / step) * CELL_SIZE;
+    const my = withGap ? m.y : (m.y / step) * CELL_SIZE;
+    const content = midCells[m.lineIndex];
+
+    if (content && content.base !== null && content.base !== undefined) {
+      const v = Math.round(255 * (1 - content.base / 100));
+      ctx.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
+      ctx.fillRect(mx, my, CELL_SIZE, CELL_SIZE);
+    }
+    if (content && content.ground && content.ground !== 'empty'
+        && !NO_IMAGE_ICONS.has(content.ground)) {
+      const im = imgMap[content.ground];
+      if (im) ctx.drawImage(im, mx, my, CELL_SIZE, CELL_SIZE);
+    }
+  });
 
   const { lineWidth, headLen, headWidth } = ARROW_STYLE;
   for (let r = 0; r < rows; r++) {
